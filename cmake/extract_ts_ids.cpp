@@ -8,12 +8,13 @@
 #include <algorithm>
 #include <iterator>
 #include <cctype>
+#include <string.h>
 
 using namespace std;
 
 extern "C" const TSLanguage* tree_sitter_cuda();
 
-string to_upper(string_view sv) {
+static string to_upper(string_view sv) {
   string result;
   result.reserve(sv.size()); // Ottimizzazione: pre-alloca la memoria
 
@@ -24,7 +25,7 @@ string to_upper(string_view sv) {
   return result;
 }
 
-void extract_from_query(string_view query_str) {
+static void extract_from_query(string_view query_str) {
   uint32_t error_offset;
   TSQueryError error_type;
   TSQuery* query = ts_query_new(tree_sitter_cuda(), query_str.data(),
@@ -50,7 +51,24 @@ void extract_from_query(string_view query_str) {
   }
 }
 
-int main(int argc, char** argv) {
-  extract_from_query(QUERY_CPP);
+int main(int argc, const char** argv) {
+  if (argc != 2) {
+    cerr << "Usage: " << argv[0] << " [QUERY_CPP|QUERY_CPP_EXCLUDE|QUERY_CPP_INCLUDE]"
+      << endl << "but " << argc << " arguments given" << endl;
+      return 1;
+  }
+  string_view str;
+  if (strncmp(argv[1], "QUERY_CPP_EXCLUDE", 17) == 0) {
+    str = QUERY_CPP_EXCLUDE;
+  } else if (strncmp(argv[1], "QUERY_CPP_INCLUDE", 17) == 0) {
+    str = QUERY_CPP_INCLUDE;
+  } else if (strncmp(argv[1], "QUERY_CPP", 9) == 0) {
+    str = QUERY_CPP;
+  } else {
+    cerr << "Argument: '" << argv[1] << "' is not [QUERY_CPP|QUERY_CPP_EXCLUDE|QUERY_CPP_INCLUDE]"
+      << endl;
+      return 1;
+  }
+  extract_from_query(str);
   return 0;
 }

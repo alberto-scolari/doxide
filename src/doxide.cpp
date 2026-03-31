@@ -1,5 +1,5 @@
 #include "Driver.hpp"
-#include "config.h"
+#include <generated/config.h>
 
 void write_file(const std::string& contents,
     const std::filesystem::path& dst) {

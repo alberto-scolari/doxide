@@ -2,5 +2,11 @@
 
 #include <cstdint>
 
-enum CppQueryNodes: uint32_t {
-@CPP_QUERY_ENUMS@};
+enum QueryCppNodes: uint32_t {
+@QUERY_CPP_ENUMS@};
+
+enum QueryCppExcludeNodes: uint32_t {
+@QUERY_CPP_EXCLUDE_ENUMS@};
+
+enum QueryCppIncludeNodes: uint32_t {
+@QUERY_CPP_INCLUDE_ENUMS@};

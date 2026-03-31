@@ -76,35 +76,43 @@ if(NOT tree-sitter-cuda_FOUND)
 endif()
 
 
-list(APPEND extract_ts_sources ${PROJECT_SOURCE_DIR}/cmake/extract_ts_ids.cpp ${DEPS_SOURCES})
-list(APPEND extract_ts_incl_dirs ${PROJECT_SOURCE_DIR}/src ${DEPS_INCLUDE_DIRS})
+# if available, use the tree-sitter-cuda target
 if(TARGET tree-sitter-cuda::tree-sitter-cuda)
   set(extract_ts_libs LINK_LIBRARIES tree-sitter-cuda::tree-sitter-cuda)
 endif()
+# add tree-sitter-cuda sources and include paths if needed
+list(APPEND extract_ts_sources ${PROJECT_SOURCE_DIR}/cmake/extract_ts_ids.cpp ${DEPS_SOURCES})
+list(APPEND extract_ts_incl_dirs ${PROJECT_SOURCE_DIR}/src ${DEPS_INCLUDE_DIRS})
 set(extract_ts_flags "-DINCLUDE_DIRECTORIES=${extract_ts_incl_dirs}")
 if(UNIX)
     list(APPEND extract_ts_flags "-Wextra;-Wextra")
 endif()
 
-try_run(RUN_RESULT COMPILE_RESULT
+try_compile(COMPILE_RESULT
   SOURCES ${extract_ts_sources}
-  # Passa le directory di inclusione qui:
   CMAKE_FLAGS "${extract_ts_flags}"
   ${extract_ts_libs}
   CXX_STANDARD 20
   CXX_STANDARD_REQUIRED TRUE
-  COMPILE_OUTPUT_VARIABLE COMPILE_LOG
-  RUN_OUTPUT_STDOUT_VARIABLE CPP_QUERY_ENUMS
+  OUTPUT_VARIABLE COMPILE_LOG
+  COPY_FILE "${CMAKE_BINARY_DIR}/generate/extract_ts_ids${CMAKE_EXECUTABLE_SUFFIX}"
 )
-
 if(NOT COMPILE_RESULT)
   message(FATAL_ERROR "Compilation failed with code '${COMPILE_RESULT}'"
   " and log\n--------\n${COMPILE_LOG}\n--------\n")
 endif()
-if(RUN_RESULT)
-  message(FATAL_ERROR "Run failed with code '${RUN_RESULT}'"
-  " and stdout\n--------\n${CPP_QUERY_ENUMS}\n--------\n")
-endif()
+
+foreach(VAR IN ITEMS QUERY_CPP QUERY_CPP_EXCLUDE QUERY_CPP_INCLUDE)
+  execute_process(
+    COMMAND "${CMAKE_BINARY_DIR}/generate/extract_ts_ids${CMAKE_EXECUTABLE_SUFFIX}" ${VAR}
+      RESULT_VARIABLE RUN_RESULT
+      OUTPUT_VARIABLE ${VAR}_ENUMS
+  )
+  if(RUN_RESULT)
+    message(FATAL_ERROR "Run failed with code '${RUN_RESULT}'"
+      " and stdout\n--------\n${${VAR}_ENUMS}\n--------\n")
+  endif()
+endforeach()
 
 configure_file(
   ${CMAKE_SOURCE_DIR}/src/cpp_query_enums.hpp.in
@@ -115,6 +123,10 @@ configure_file(
 find_dep_dual_mode(CLI11 DEPS_INCLUDE_DIRS contrib/CLI11/include)
 find_dep_dual_mode(p-ranav-glob DEPS_INCLUDE_DIRS contrib/glob/single_include)
 
+configure_file(
+  ${CMAKE_SOURCE_DIR}/src/config.h.in
+  ${CMAKE_BINARY_DIR}/src/generated/config.h
+)
 
 add_executable(doxide
   ${DEPS_SOURCES} # sources of the submodules (if any)
@@ -137,14 +149,9 @@ if(WIN32)
   # add icon
   target_sources(doxide PRIVATE win/icon.rc)
 endif()
-target_include_directories(doxide PRIVATE src ${DEPS_INCLUDE_DIRS})
+target_include_directories(doxide PRIVATE src ${DEPS_INCLUDE_DIRS} ${CMAKE_BINARY_DIR}/src)
 
 target_link_libraries(doxide yaml ${DEPS_TARGETS})
-
-configure_file(
-  ${CMAKE_SOURCE_DIR}/src/config.h.in
-  ${CMAKE_SOURCE_DIR}/src/config.h
-)
 
 include(GNUInstallDirs)
 install(TARGETS doxide RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

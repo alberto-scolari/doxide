@@ -2,8 +2,6 @@
 
 #include <string_view>
 
-
-
 /**
  * Query for entities in C++ sources.
  *

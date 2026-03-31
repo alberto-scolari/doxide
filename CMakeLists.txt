@@ -75,8 +75,46 @@ if(NOT tree-sitter-cuda_FOUND)
   list(APPEND DEPS_INCLUDE_DIRS contrib/tree-sitter/lib/include)
 endif()
 
+
+list(APPEND extract_ts_sources ${PROJECT_SOURCE_DIR}/cmake/extract_ts_ids.cpp ${DEPS_SOURCES})
+list(APPEND extract_ts_incl_dirs ${PROJECT_SOURCE_DIR}/src ${DEPS_INCLUDE_DIRS})
+if(TARGET tree-sitter-cuda::tree-sitter-cuda)
+  set(extract_ts_libs LINK_LIBRARIES tree-sitter-cuda::tree-sitter-cuda)
+endif()
+set(extract_ts_flags "-DINCLUDE_DIRECTORIES=${extract_ts_incl_dirs}")
+if(UNIX)
+    list(APPEND extract_ts_flags "-Wextra;-Wextra")
+endif()
+
+try_run(RUN_RESULT COMPILE_RESULT
+  SOURCES ${extract_ts_sources}
+  # Passa le directory di inclusione qui:
+  CMAKE_FLAGS "${extract_ts_flags}"
+  ${extract_ts_libs}
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED TRUE
+  COMPILE_OUTPUT_VARIABLE COMPILE_LOG
+  RUN_OUTPUT_STDOUT_VARIABLE CPP_QUERY_ENUMS
+)
+
+if(NOT COMPILE_RESULT)
+  message(FATAL_ERROR "Compilation failed with code '${COMPILE_RESULT}'"
+  " and log\n--------\n${COMPILE_LOG}\n--------\n")
+endif()
+if(RUN_RESULT)
+  message(FATAL_ERROR "Run failed with code '${RUN_RESULT}'"
+  " and stdout\n--------\n${CPP_QUERY_ENUMS}\n--------\n")
+endif()
+
+configure_file(
+  ${CMAKE_SOURCE_DIR}/src/cpp_query_enums.hpp.in
+  ${CMAKE_BINARY_DIR}/src/generated/cpp_query_enums.hpp
+)
+
+
 find_dep_dual_mode(CLI11 DEPS_INCLUDE_DIRS contrib/CLI11/include)
 find_dep_dual_mode(p-ranav-glob DEPS_INCLUDE_DIRS contrib/glob/single_include)
+
 
 add_executable(doxide
   ${DEPS_SOURCES} # sources of the submodules (if any)

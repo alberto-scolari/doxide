@@ -1,0 +1,6 @@
+#pragma once
+
+#include <cstdint>
+
+enum CppQueryNodes: uint32_t {
+@CPP_QUERY_ENUMS@};

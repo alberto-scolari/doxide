@@ -5,7 +5,8 @@ p-ranav-glob/0.0.1
 tree-sitter-cuda/0.21.1
 
 [generators]
-CMakeDeps
+CMakeConfigDeps
+# CMakeDeps
 CMakeToolchain
 
 [layout]

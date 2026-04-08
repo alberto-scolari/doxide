@@ -2,6 +2,11 @@
 #include "Doc.hpp"
 #include "CppQueries.hpp"
 
+#include <functional>
+#include <stdexcept>
+
+#include <generated/cpp_query_enums.hpp>
+
 CppParser::CppParser() :
     parser(nullptr),
     query(nullptr),
@@ -91,18 +96,28 @@ void CppParser::parse(const std::filesystem::path& filename,
   TSQueryMatch match;
   Entity entity;
   int indent = 0;
+
+  uint32_t start = 0, middle = 0, end = 0;
+  uint32_t start_line = -1, end_line = -1;
+
+  std::function<void()> const update_state = [&] () {
+      start = ts_node_start_byte(node);
+      start_line = ts_node_start_point(node).row;
+      end = ts_node_end_byte(node);
+      end_line = ts_node_end_point(node).row;
+      middle = end;
+  };
   while (ts_query_cursor_next_match(cursor, &match)) {
-    uint32_t start = 0, middle = 0, end = 0;
-    uint32_t start_line = -1, end_line = -1;
+
     for (uint16_t i = 0; i < match.capture_count; ++i) {
       node = match.captures[i].node;
       uint32_t id = match.captures[i].index;
       uint32_t length = 0;
-      const char* name = ts_query_capture_name_for_id(query, id, &length);
       uint32_t k = ts_node_start_byte(node);
       uint32_t l = ts_node_end_byte(node);
 
-      if (strncmp(name, "docs", length) == 0) {
+      switch (id) {
+      case QueryCppNodes::DOCS: {
         Doc doc(file.decl.substr(k, l - k), indent);
         Entity& e = doc.open.type == OPEN_BEFORE ? entity : entities.back();
         e.docs.append(doc.docs);
@@ -112,7 +127,9 @@ void CppParser::parse(const std::filesystem::path& filename,
           e.ingroup = doc.ingroup;
         }
         indent = doc.indent;
-      } else if (strncmp(name, "nested_name", length) == 0) {
+        break;
+      }
+      case QueryCppNodes::NESTED_NAME: {
         assert(entity.type == EntityType::NAMESPACE);
 
         /* pop the stack down to parent */
@@ -142,40 +159,61 @@ void CppParser::parse(const std::filesystem::path& filename,
           prev = *ns_iter;
         }
         entity.name = prev;
-      } else if (strncmp(name, "name", length) == 0) {
+        break;
+      }
+      case QueryCppNodes::NAME:
         entity.name = file.decl.substr(k, l - k);
-      } else if (strncmp(name, "body", length) == 0) {
+        break;
+      case QueryCppNodes::BODY:
         middle = ts_node_start_byte(node);
-      } else if (strncmp(name, "value", length) == 0) {
+        break;
+      case QueryCppNodes::VALUE:
         middle = ts_node_start_byte(node);
-      } else {
-        start = ts_node_start_byte(node);
-        start_line = ts_node_start_point(node).row;
-        end = ts_node_end_byte(node);
-        end_line = ts_node_end_point(node).row;
-        middle = end;
-
-        if (strncmp(name, "namespace", length) == 0) {
-          entity.type = EntityType::NAMESPACE;
-        } else if (strncmp(name, "template", length) == 0) {
-          entity.type = EntityType::TEMPLATE;
-        } else if (strncmp(name, "type", length) == 0) {
-          entity.type = EntityType::TYPE;
-        } else if (strncmp(name, "typedef", length) == 0) {
-          entity.type = EntityType::TYPEDEF;
-        } else if (strncmp(name, "concept", length) == 0) {
-          entity.type = EntityType::CONCEPT;
-        } else if (strncmp(name, "variable", length) == 0) {
-          entity.type = EntityType::VARIABLE;
-        } else if (strncmp(name, "function", length) == 0) {
-          entity.type = EntityType::FUNCTION;
-        } else if (strncmp(name, "operator", length) == 0) {
-          entity.type = EntityType::OPERATOR;
-        } else if (strncmp(name, "enumerator", length) == 0) {
-          entity.type = EntityType::ENUMERATOR;
-        } else if (strncmp(name, "macro", length) == 0) {
-          entity.type = EntityType::MACRO;
-        }
+        break;
+      case QueryCppNodes::NAMESPACE:
+        update_state();
+        entity.type = EntityType::NAMESPACE;
+        break;
+      case QueryCppNodes::TEMPLATE:
+        update_state();
+        entity.type = EntityType::TEMPLATE;
+        break;
+      case QueryCppNodes::TYPE:
+        update_state();
+        entity.type = EntityType::TYPE;
+        break;
+      case QueryCppNodes::TYPEDEF:
+        update_state();
+        entity.type = EntityType::TYPEDEF;
+        break;
+      case QueryCppNodes::CONCEPT:
+        update_state();
+        entity.type = EntityType::CONCEPT;
+        break;
+      case QueryCppNodes::VARIABLE:
+        update_state();
+        entity.type = EntityType::VARIABLE;
+        break;
+      case QueryCppNodes::FUNCTION:
+        update_state();
+        entity.type = EntityType::FUNCTION;
+        break;
+      case QueryCppNodes::OPERATOR:
+        update_state();
+        entity.type = EntityType::OPERATOR;
+        break;
+      case QueryCppNodes::ENUMERATOR:
+        update_state();
+        entity.type = EntityType::ENUMERATOR;
+        break;
+      case QueryCppNodes::MACRO:
+        update_state();
+        entity.type = EntityType::MACRO;
+        break;
+      default:
+        const char* name = ts_query_capture_name_for_id(query, id, &length);
+        throw std::logic_error("unknown capture '" + std::string(name, length) + "'");
+        break;
       }
     }
     if (entity.type != EntityType::ROOT) {
@@ -248,20 +286,24 @@ void CppParser::parse(const std::filesystem::path& filename,
       uint32_t end = ts_node_end_byte(node);
       const char* name = ts_query_capture_name_for_id(query_exclude, id,
           &length);
-      if (strncmp(name, "exclude", length) == 0) {
-        /* exclude any expressions in this region for line data */
+      switch (id) {
+      case EXCLUDE:
         excluded.push_back(std::make_pair(start, end));
-      } else if (strncmp(name, "if_constexpr", length) == 0) {
-        /* check if this is `constexpr`, which is not reflected in the
-         * parse tree and requires a string comparison */
-        std::string stmt = file.decl.substr(start, end - start);
-        constexpr_context = std::regex_search(stmt, regex_if_constexpr);
-      } else if (strncmp(name, "then_exclude", length) == 0) {
-        /* to be excluded if the last constexpr check was positive */
+        break;
+      case THEN_EXCLUDE:
         if (constexpr_context) {
           excluded.push_back(std::make_pair(start, end));
           constexpr_context = false;
         }
+        break;
+      case IF_CONSTEXPR: {
+          std::string stmt = file.decl.substr(start, end - start);
+          constexpr_context = std::regex_search(stmt, regex_if_constexpr);
+        }
+        break;
+      default:
+        throw std::logic_error("unknown capture '" + std::string(name, length) + "'");
+        break;
       }
     }
   }
@@ -275,28 +317,34 @@ void CppParser::parse(const std::filesystem::path& filename,
     for (uint16_t i = 0; i < match.capture_count; ++i) {
       node = match.captures[i].node;
       uint32_t id = match.captures[i].index;
-      uint32_t length = 0;
       uint32_t start = ts_node_start_byte(node);
       uint32_t end = ts_node_end_byte(node);
-      const char* name = ts_query_capture_name_for_id(query_include, id,
-          &length);
-      if (strncmp(name, "executable", length) == 0) {
-        /* executable code, update line data as long as the code is not
-         * within an excluded region */
-        bool exclude = std::any_of(excluded.begin(), excluded.end(),
-            [start,end](auto range) {
-              return range.first <= start && end <= range.second;
-            });
-        if (!exclude) {
-          uint32_t start_line = ts_node_start_point(node).row;
-          uint32_t end_line = ts_node_end_point(node).row;
-          for (uint32_t line = start_line; line <= end_line; ++line) {
-            if (file.line_counts[line] < 0) {
-              file.line_counts[line] = 0;
-              ++file.lines_included;
+      switch (id) {
+      case EXECUTABLE: {
+          /* executable code, update line data as long as the code is not
+          * within an excluded region */
+          bool exclude = std::any_of(excluded.begin(), excluded.end(),
+              [start,end](auto range) {
+                return range.first <= start && end <= range.second;
+              });
+          if (!exclude) {
+            uint32_t start_line = ts_node_start_point(node).row;
+            uint32_t end_line = ts_node_end_point(node).row;
+            for (uint32_t line = start_line; line <= end_line; ++line) {
+              if (file.line_counts[line] < 0) {
+                file.line_counts[line] = 0;
+                ++file.lines_included;
+              }
             }
           }
         }
+        break;
+      default: {
+          uint32_t length = 0;
+          const char* name = ts_query_capture_name_for_id(query_include, id, &length);
+          throw std::logic_error("unknown capture '" + std::string(name, length) + "'");
+        }
+        break;
       }
     }
   }

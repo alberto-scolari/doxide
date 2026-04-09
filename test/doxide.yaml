@@ -1,0 +1,11 @@
+title: Test
+description: |
+    These are just tests.
+files:
+  - "src/**.hpp"
+  - "src/**.cpp"
+output: docs/
+groups:
+  - name: agroup
+    title: A group
+    description: A group description.

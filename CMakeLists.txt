@@ -144,6 +144,9 @@ add_executable(doxide
   src/SourceWatcher.cpp
   src/YAMLNode.cpp
   src/YAMLParser.cpp
+  src/entities/CodeInfo.cpp
+  src/entities/NamespaceEntity.cpp
+  src/entities/RootEntity.cpp
 )
 if(WIN32)
   # add icon

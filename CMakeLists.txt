@@ -28,58 +28,102 @@ else()
   set(DEPS_STRATEGY ${DEPS_SOURCE_STRATEGY})
 endif()
 
-if(DEPS_STRATEGY STREQUAL "auto" OR DEPS_STRATEGY STREQUAL "target")
-  set(DEPS_STRATEGY_FIND_PACKAGE ON)
-endif()
-
-if(DEPS_STRATEGY STREQUAL "target")
-  set(FORCED_REQUIRE REQUIRED)
-endif()
-
-if(NOT yaml_FOUND AND DEPS_STRATEGY_FIND_PACKAGE)
-  find_package(yaml CONFIG ${FORCED_REQUIRE})
-endif()
-if(NOT yaml_FOUND AND NOT DEPS_STRATEGY STREQUAL "submodule")
-  # use Findyaml.cmake module provided and find in system
-  find_package(yaml MODULE)
-endif()
-if(NOT yaml_FOUND)
-  message(STATUS "Sourcing yaml from submodule")
-  add_subdirectory(contrib/libyaml EXCLUDE_FROM_ALL SYSTEM)
-endif()
-
-# convenience macro to source a dependency: first look for a CMake target (if allowed)
-# then source it from the given files in the submodule
-macro(find_dep_dual_mode dep_name VAR val1)
-  if(NOT ${dep_name}_FOUND AND DEPS_STRATEGY_FIND_PACKAGE)
-    find_package(${dep_name} CONFIG ${FORCED_REQUIRE})
-  endif()
-  if(${dep_name}_FOUND)
-    list(APPEND DEPS_TARGETS ${dep_name}::${dep_name})
-  else()
-    set(__the_list ${ARGV})
-    if(${ARGC} GREATER 3)
-      list(SUBLIST __the_list 3 -1 __file_args)
+# source dependency either from CMake target (if available) or from submodule
+function(source_dependency name type)
+  if(NOT ${name}_FOUND AND NOT DEPS_STRATEGY STREQUAL "submodule")
+    find_package(${name} CONFIG QUIET)
+    if(NOT ${name}_FOUND)
+      find_package(${name} MODULE QUIET)
     endif()
-    message(STATUS "Sourcing ${dep_name} from submodule")
-    list(APPEND ${VAR} ${val1} ${__file_args})
-    unset(__file_args)
   endif()
-endmacro()
+  if(${name}_FOUND)
+    if(NOT TARGET ${name}::${name})
+      add_library(${name}::${name} ALIAS ${name})
+    endif()
+    message(STATUS "Sourced \"${name}\" from target.")
+    return()
+  elseif(DEPS_STRATEGY STREQUAL "target")
+    # only target is selected, if not found err out
+    message(FATAL_ERROR "Cannot find an existing dependency \"${name}\"")
+  endif()
+  # otherwise go on and try with submodule
 
-find_dep_dual_mode(tree-sitter-cuda DEPS_SOURCES
-  contrib/tree-sitter/lib/src/lib.c contrib/tree-sitter-cuda/src/parser.c
-  contrib/tree-sitter-cuda/src/scanner.c
+  set(multiValueArgs INTERFACE LIBRARY SOURCES)
+  set(oneValueArgs SUBDIR)
+  cmake_parse_arguments(PARSE_ARGV 1 parsed
+    "" "${oneValueArgs}" "${multiValueArgs}"
+  )
+  if(type STREQUAL "SUBDIR")
+    message(STATUS "parsed_SUBDIR IS ${parsed_SUBDIR}")
+    add_subdirectory(contrib/${parsed_SUBDIR} EXCLUDE_FROM_ALL SYSTEM)
+  elseif(type STREQUAL "INTERFACE")
+    list(TRANSFORM parsed_INTERFACE PREPEND "contrib/")
+    add_library(${name} INTERFACE)
+    target_include_directories(${name} SYSTEM INTERFACE ${parsed_INTERFACE})
+  elseif(type STREQUAL "LIBRARY")
+    list(TRANSFORM parsed_LIBRARY PREPEND "contrib/")
+    list(TRANSFORM parsed_SOURCES PREPEND "contrib/")
+    add_library(${name} STATIC EXCLUDE_FROM_ALL ${parsed_SOURCES})
+    target_include_directories(${name} SYSTEM PUBLIC ${parsed_LIBRARY})
+  else()
+    message(FATAL_ERROR "Dependency type \"${type}\" not known.")
+  endif()
+  add_library(${name}::${name} ALIAS ${name})
+  message(STATUS "Sourced \"${name}\" from submodule.")
+endfunction()
+
+source_dependency(yaml SUBDIR libyaml)
+source_dependency(tree-sitter-cuda LIBRARY tree-sitter/lib/include
+  SOURCES tree-sitter/lib/src/lib.c tree-sitter-cuda/src/parser.c tree-sitter-cuda/src/scanner.c
 )
-if(NOT tree-sitter-cuda_FOUND)
-  list(APPEND DEPS_INCLUDE_DIRS contrib/tree-sitter/lib/include)
+source_dependency(CLI11 INTERFACE CLI11/include)
+source_dependency(p-ranav-glob INTERFACE glob/single_include)
+
+if(TARGET tree-sitter-cuda)
+  # the dependency was sourced from submodule: use sources directly
+  get_target_property(src_files tree-sitter-cuda SOURCES)
+  list(TRANSFORM src_files PREPEND "${PROJECT_SOURCE_DIR}/")
+  get_target_property(inc_dirs tree-sitter-cuda INTERFACE_INCLUDE_DIRECTORIES)
+else()
+  set(link_deps LINK_LIBRARIES tree-sitter-cuda::tree-sitter-cuda)
 endif()
 
-find_dep_dual_mode(CLI11 DEPS_INCLUDE_DIRS contrib/CLI11/include)
-find_dep_dual_mode(p-ranav-glob DEPS_INCLUDE_DIRS contrib/glob/single_include)
+try_compile(COMPILE_RESULT
+  SOURCES ${PROJECT_SOURCE_DIR}/cmake/extract_ts_ids.cpp ${src_files}
+  CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${PROJECT_SOURCE_DIR}/src;${inc_dirs}"
+  ${link_deps}
+  CXX_STANDARD 20
+  CXX_STANDARD_REQUIRED TRUE
+  OUTPUT_VARIABLE COMPILE_LOG
+  COPY_FILE "${CMAKE_BINARY_DIR}/generate/extract_ts_ids${CMAKE_EXECUTABLE_SUFFIX}"
+)
+if(NOT COMPILE_RESULT)
+  message(FATAL_ERROR "Compilation failed with code '${COMPILE_RESULT}'"
+  " and log\n--------\n${COMPILE_LOG}\n--------\n")
+endif()
+
+foreach(VAR IN ITEMS QueryCppNodes QueryCppExcludeNodes QueryCppIncludeNodes)
+  execute_process(
+    COMMAND "${CMAKE_BINARY_DIR}/generate/extract_ts_ids${CMAKE_EXECUTABLE_SUFFIX}" ${VAR}
+      RESULT_VARIABLE RUN_RESULT
+      OUTPUT_VARIABLE ${VAR}_Code
+  )
+  if(RUN_RESULT)
+    message(FATAL_ERROR "Run failed with code '${RUN_RESULT}'"
+      " and stdout\n--------\n${${VAR}_Code}\n--------\n")
+  endif()
+endforeach()
+
+configure_file(
+  ${CMAKE_SOURCE_DIR}/src/cpp_query_enums.hpp.in
+  ${CMAKE_BINARY_DIR}/src/generated/cpp_query_enums.hpp
+)
+configure_file(
+  ${CMAKE_SOURCE_DIR}/src/config.h.in
+  ${CMAKE_BINARY_DIR}/src/generated/config.h
+)
 
 add_executable(doxide
-  ${DEPS_SOURCES} # sources of the submodules (if any)
   src/doxide.cpp
   src/CppParser.cpp
   src/Doc.cpp
@@ -100,16 +144,10 @@ if(WIN32)
   # add icon
   target_sources(doxide PRIVATE win/icon.rc)
 endif()
-target_include_directories(doxide PRIVATE src)
-if(DEPS_INCLUDE_DIRS)
-  target_include_directories(doxide SYSTEM PRIVATE ${DEPS_INCLUDE_DIRS})
-endif()
+target_include_directories(doxide PRIVATE src ${CMAKE_BINARY_DIR}/src)
 
-target_link_libraries(doxide yaml ${DEPS_TARGETS})
-
-configure_file(
-  ${CMAKE_SOURCE_DIR}/src/config.h.in
-  ${CMAKE_SOURCE_DIR}/src/config.h
+target_link_libraries(doxide yaml::yaml tree-sitter-cuda::tree-sitter-cuda
+  CLI11::CLI11 p-ranav-glob::p-ranav-glob
 )
 
 include(GNUInstallDirs)

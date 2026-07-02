@@ -1,0 +1,13 @@
+#pragma once
+
+#include <cstdint>
+#include <string_view>
+
+
+@QueryCppNodes_Code@
+
+
+@QueryCppExcludeNodes_Code@
+
+
+@QueryCppIncludeNodes_Code@

@@ -111,7 +111,7 @@ void YAMLParser::parseSequence(const std::filesystem::path& filename,
   }
 }
 
-void YAMLParser::parseValue(const std::filesystem::path& filename,
+void YAMLParser::parseValue(const std::filesystem::path&,
     YAMLNode& node) {
   auto data = (char*)event.data.scalar.value;
   auto length = event.data.scalar.length;

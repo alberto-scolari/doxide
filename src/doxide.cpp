@@ -1,5 +1,5 @@
 #include "Driver.hpp"
-#include "config.h"
+#include <generated/config.h>
 
 #include <CLI/CLI.hpp>
 #include <filesystem>

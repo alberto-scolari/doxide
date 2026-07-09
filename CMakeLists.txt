@@ -139,6 +139,7 @@ add_executable(doxide
   src/TextLineCursor.cpp
   src/YAMLNode.cpp
   src/YAMLParser.cpp
+  src/generation/Sanitize.cpp
 )
 if(WIN32)
   # add icon

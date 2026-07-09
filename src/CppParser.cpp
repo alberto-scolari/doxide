@@ -5,6 +5,7 @@
 #include "TextLineCursor.hpp"
 #include "doxide.hpp"
 #include "CppQueries.hpp"
+#include "Regex.hpp"
 #include "entities/EntityRegistry.hpp"
 #include "entities/FileEntity.hpp"
 #include "entities/RefVariant.hpp"
@@ -17,9 +18,11 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <regex>
 #include <stdexcept>
 #include <string.h>
 #include <unordered_map>
@@ -636,6 +639,76 @@ void CppParser::parse(
 
   // pop remaining entries to apply the child's visibility and empty the stack
   pop_all();
+
+  // sorted map of END, START, for optimized lookup of lower_bound (result >= query)
+  std::map<uint32_t,uint32_t> excluded;
+  bool constexpr_context = false;
+  static const std::regex regex_if_constexpr("^(?:if\\s+)?constexpr", REGEX_FLAGS);
+  cursor = unique_cursor_ptr(ts_query_cursor_new(), &ts_query_cursor_delete);
+  node = ts_tree_root_node(tree);
+  ts_query_cursor_exec(cursor.get(), query_exclude, node);
+  while (ts_query_cursor_next_match(cursor.get(), &match)) {
+    for (uint16_t i = 0; i < match.capture_count; ++i) {
+      node = match.captures[i].node;
+      uint32_t id = match.captures[i].index;
+      uint32_t start = ts_node_start_byte(node);
+      uint32_t end = ts_node_end_byte(node);
+      switch (static_cast<QueryCppExcludeNodes>(id)) {
+        case QueryCppExcludeNodes::EXCLUDE: {
+          /* exclude any expressions in this region for line data */
+          excluded.emplace(start, end);
+          break;
+        }
+        case QueryCppExcludeNodes::THEN_EXCLUDE: {
+          /* to be excluded if the last constexpr check was positive */
+          if (constexpr_context) {
+            excluded.emplace(start, end);
+            constexpr_context = false;
+          }
+          break;
+        }
+        case QueryCppExcludeNodes::IF_CONSTEXPR: {
+          /* check if this is `constexpr`, which is not reflected in the
+          * parse tree and requires a string comparison */
+          std::string_view stmt = file_content.substr(start, end - start);
+          constexpr_context = std::regex_search(stmt.cbegin(), stmt.cend(), regex_if_constexpr);
+          break;
+        }
+      }
+    }
+  }
+
+  cursor = unique_cursor_ptr(ts_query_cursor_new(), &ts_query_cursor_delete);
+  node = ts_tree_root_node(tree);
+  ts_query_cursor_exec(cursor.get(), query_include, node);
+  auto& line_counts = file_ref->get_line_counts();
+  while (ts_query_cursor_next_match(cursor.get(), &match)) {
+    for (uint16_t i = 0; i < match.capture_count; ++i) {
+      node = match.captures[i].node;
+      uint32_t id = match.captures[i].index;
+      uint32_t start = ts_node_start_byte(node);
+      uint32_t end = ts_node_end_byte(node);
+      switch (static_cast<QueryCppIncludeNodes>(id)) {
+        case QueryCppIncludeNodes::EXECUTABLE: {
+          /* executable code, update line data as long as the code is not
+            * within an excluded region */
+          auto it = excluded.lower_bound(end);
+          bool exclude = it != excluded.end() and it->first <= start;
+          if (not exclude) {
+            uint32_t start_line = ts_node_start_point(node).row;
+            uint32_t end_line = ts_node_end_point(node).row;
+            for (uint32_t line = start_line; line <= end_line; ++line) {
+              if (line_counts[line] < 0) {
+                line_counts[line] = 0;
+                file_ref->get_included_lines()++;
+              }
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
 }
 
 std::string CppParser::preprocess(const std::filesystem::path& filename,

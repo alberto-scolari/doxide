@@ -27,6 +27,50 @@ enum DocTokenType : int {
   ANY = ~0
 };
 
+constexpr std::string_view get_name(DocTokenType tt) {
+  switch (tt) {
+  case DocTokenType::NONE: {
+    return "NONE";
+  }
+  case DocTokenType::OPEN_AFTER: {
+    return "OPEN_AFTER";
+  }
+  case DocTokenType::OPEN_BEFORE: {
+    return "OPEN_BEFORE";
+  }
+  case DocTokenType::CLOSE: {
+    return "CLOSE";
+  }
+  case DocTokenType::COMMAND: {
+    return "COMMAND";
+  }
+  case DocTokenType::PARA: {
+    return "PARA";
+  }
+  case DocTokenType::LINE: {
+    return "LINE";
+  }
+  case DocTokenType::SENTENCE: {
+    return "SENTENCE";
+  }
+  case DocTokenType::WHITESPACE: {
+    return "WHITESPACE";
+  }
+  case DocTokenType::WORD: {
+    return "WORD";
+  }
+  case DocTokenType::STAR: {
+    return "STAR";
+  }
+  case DocTokenType::SLASH: {
+    return "SLASH";
+  }
+  case DocTokenType::ANY: {
+    return "ANY";
+  }
+  }
+}
+
 /**
  * Token.
  *
@@ -36,14 +80,15 @@ enum DocTokenType : int {
  * as it contains a reference to a substring of the source file.
  */
 struct DocToken {
+
   /**
    * Constructor.
    *
    * @param type Token type.
    * @param value Token value.
    */
-  DocToken(const DocTokenType type = NONE,
-      TextLineCursor value = TextLineCursor());
+  constexpr DocToken(const DocTokenType type = NONE, TextLineCursor value = TextLineCursor()):
+    type(type), value(value) {}
 
   const TextLineCursor& get() const;
 

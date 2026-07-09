@@ -1,14 +1,18 @@
 #pragma once
 
-#include "Entity.hpp"
+#include "entities/Entities.hpp"
+#include "entities/FwdRef.hpp"
+#include "entities/RefVariant.hpp"
 
-#include <stdint.h>
+#include <cstdint>
 #include <tree_sitter/api.h>
 #include <filesystem>
-#include <list>
+#include <stack>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+
+class EntityRegistry;
 
 /**
  * C++ source parser.
@@ -34,34 +38,11 @@ public:
    * @param defines Macro definitions.
    * @param[in,out] root Root entity.
    */
-  void parse(const std::filesystem::path& filename,
-      const std::unordered_map<std::string,std::string>& defines,
-      Entity& root);
+  void parse(EntityRegistry& registry,
+    const std::filesystem::path& filename,
+    const std::unordered_map<std::string, std::string>& defines);
 
 private:
-  /**
-   * Push onto the stack.
-   *
-   * @param entity Entity to push.
-   * @param start Start byte of range.
-   * @param end End byte of range.
-   */
-  void push(Entity&& entity, const uint32_t start, const uint32_t end);
-
-  /**
-   * Pop the stack down to the parent of an entity, according to its byte
-   * range.
-   *
-   * @param start Start byte of range.
-   * @param end End byte of range.
-   *
-   * @return The parent.
-   *
-   * If both @p start and @p end are zero, this is interpreting as popping the
-   * stack down to the root node and returning it.
-   */
-  Entity& pop(const uint32_t start = 0, const uint32_t end = 0);
-
   /**
    * Preprocess C++ source, replacing preprocessor macros as defined in the
    * config file and attempting to recover from any parse errors. This is
@@ -83,23 +64,23 @@ private:
    * @param in Preprocessed source.
    * @param tree Parse tree for file.
    */
-  void report(const std::filesystem::path& file, const std::string_view in,
-      TSTree* tree);
+  void report(const std::filesystem::path& file, const std::string_view in, TSTree* tree);
 
-  /**
-   * Stack of entities while parsing.
-   */
-  std::list<Entity> entities;
+  struct StackEntry {
+    RefVariant ref;
+    uint32_t start;
+    uint32_t end;
+  };
 
-  /**
-   * Stack of start bytes, corresponding to `entities`, while parsing.
-   */
-  std::list<uint32_t> starts;
+  template<entity T> std::stack<StackEntry>::reference emplace_entity(FwdRef<T> ref, uint32_t start, uint32_t end) {
+    return entities_stack.emplace(ref, start, end);
+  }
 
-  /**
-   * Stack of end bytes, corresponding to `entities`, while parsing.
-   */
-  std::list<uint32_t> ends;
+  std::stack<StackEntry>::const_reference pop_entities_downto_parent(uint32_t start, uint32_t end);
+
+  void pop_all();
+
+  std::stack<StackEntry>::reference push(RefVariant ref, uint32_t start, uint32_t end);
 
   /**
    * C++ parser.
@@ -120,4 +101,6 @@ private:
    * C++ inclusions query.
    */
   TSQuery* query_include;
+
+  std::stack<StackEntry> entities_stack;
 };

@@ -16,8 +16,8 @@ DocTokenizer::DocTokenizer(const TextLineCursor& src): source(src) {}
  * @ingroup developer
  */
 static auto regexes = {
-  std::make_pair(OPEN_AFTER, std::regex("(?:/\\*\\*|/\\*!|///|//!)<[ \\t]?", REGEX_FLAGS)),
-  std::make_pair(OPEN_BEFORE, std::regex("(?:/\\*\\*|/\\*!|///|//!)[ \\t]?", REGEX_FLAGS)),
+  std::make_pair(OPEN_AFTER, std::regex("(?://[/|!]|/\\*[\\*|!])<[ \\t]?", REGEX_FLAGS)),
+  std::make_pair(OPEN_BEFORE, std::regex("(?://[/|!]|/\\*[\\*|!])[ \\t]?", REGEX_FLAGS)),
   std::make_pair(CLOSE, std::regex("\\*/", REGEX_FLAGS)),
   std::make_pair(COMMAND, std::regex("[@\\\\](?:param(?:\\[(?:in|out|in,out)\\])?|\\w+|@|\\\\|/|f[\\$\\[\\]])", REGEX_FLAGS)),
 
@@ -26,7 +26,7 @@ static auto regexes = {
 
   /* the end of a line is one new line, as long as there is not an end of
    * comment to come */
-  std::make_pair(LINE, std::regex("[ \\t]*\\n(?:[ \\t]*\\*(?!/))?[ \\t]?", REGEX_FLAGS)),
+  std::make_pair(LINE, std::regex("[ \\t]*\\n(?:[ \\t]*(?:\\*|//[/|!]<?|/\\*[\\*|!]<?)(?!/))?[ \\t]?", REGEX_FLAGS)),
 
   std::make_pair(SENTENCE, std::regex("[.!?]", REGEX_FLAGS)),
   std::make_pair(WHITESPACE, std::regex("\\s+", REGEX_FLAGS)),
@@ -45,9 +45,7 @@ DocToken DocTokenizer::next() {
       if (std::regex_search(iter, end, match, regex,
           std::regex_constants::match_continuous)) {
         token.type = type;
-        // token.value = std::string_view(iter, iter + match.length());
         token.value = source.substr(iter, match.length());
-        // iter += match.length();
         source.advance(match.length());
         return token;
       }

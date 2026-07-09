@@ -19,7 +19,7 @@ public:
   /**
    * Construct an empty cursor.
    */
-  TextLineCursor();
+  constexpr TextLineCursor(): _start(nullptr), _size(0), _line_num(0) {}
 
   /**
    * Constructor from string_view.
@@ -35,12 +35,17 @@ public:
    */
   explicit TextLineCursor(const std::string &v);
 
+  constexpr TextLineCursor(const char* start, std::size_t size, std::size_t line_start):
+    _start(start), _size(size), _line_num(line_start) {}
+
   /**
-   * Constructor from string_view.
+   * Copy constructor.
    *
    * @param v text tu cursor on.
    */
   TextLineCursor(const TextLineCursor &) = default;
+
+  TextLineCursor(TextLineCursor&&) = default;
 
   TextLineCursor& operator=(const TextLineCursor &) = default;
 
@@ -67,6 +72,8 @@ public:
   inline std::string_view view() const noexcept {
     return std::string_view(data(), size());
   }
+
+  inline constexpr operator std::string_view() const noexcept { return view();}
 
   inline bool empty() const noexcept { return size() == 0; }
 
@@ -124,8 +131,6 @@ private:
   const char* _start;
   std::size_t _size;
   std::size_t _line_num;
-
-  TextLineCursor(const char* start, std::size_t size, std::size_t line_start);
 
   void check_start(const_iterator start) const;
 

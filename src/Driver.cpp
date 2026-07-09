@@ -254,7 +254,8 @@ void Driver::build() {
   count();
 
   MarkdownGenerator generator(output);
-  generator.generate(root, !coverage.empty());
+  // TODO: fix
+  // generator.generate(*registry, !coverage.empty());
   generator.clean();
 }
 
@@ -312,16 +313,17 @@ void Driver::watch() {
       }
 
       for (const auto& filename: changed_files) {
-        parser.parse(filename, defines, root);
+        parser.parse(*registry, filename, defines);
       }
       for (const auto& filename: added_files) {
-        parser.parse(filename, defines, root);
+        parser.parse(*registry, filename, defines);
       }
 
       count();
 
       MarkdownGenerator generator(output);
-      generator.generate(root, !coverage.empty());
+      // TODO: fix
+      // generator.generate(*registry, !coverage.empty());
       generator.clean();
 
       std::cout << "Done" << std::endl;
@@ -432,12 +434,17 @@ void Driver::config() {
   groups(yaml, root);
   root.title = title;
   root.docs = description;
+
+  registry.emplace(title, description);
+  for (const auto& g: root.groups) {
+    registry->add_group(g.name, g.title, g.docs);
+  }
 }
 
 void Driver::parse() {
   CppParser parser;
   for (const auto& filename: filenames) {
-    parser.parse(filename, defines, root);
+    parser.parse(*registry, filename, defines);
   }
 }
 

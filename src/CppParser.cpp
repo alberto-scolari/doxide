@@ -1,26 +1,38 @@
 #include "CppParser.hpp"
 
 #include "Doc.hpp"
-#include "DocToken.hpp"
-#include "Entity.hpp"
 #include "Log.hpp"
-#include "Regex.hpp"
 #include "TextLineCursor.hpp"
 #include "doxide.hpp"
 #include "CppQueries.hpp"
-
+#include "entities/EntityRegistry.hpp"
+#include "entities/FileEntity.hpp"
+#include "entities/RefVariant.hpp"
 
 #include <algorithm>
-#include <cassert>
+#include <cctype>
+#include <concepts>
 #include <cstring>
-#include <ostream>
-#include <regex>
-#include <utility>
-#include <vector>
-#include <functional>
+#include <format>
+#include <iostream>
+#include <iterator>
+#include <limits>
+#include <memory>
+#include <optional>
+#include <ranges>
 #include <stdexcept>
+#include <string.h>
+#include <unordered_map>
+#include <utility>
+#include <variant>
 
 #include <generated/cpp_query_enums.hpp>
+
+class CodeEntity;
+class NamespaceEntity;
+class RootEntity;
+class TypeEntity;
+class VariableEntity;
 
 /**
  * Tree-sitter CUDA language handle.
@@ -74,346 +86,560 @@ CppParser::~CppParser() {
   ts_parser_delete(parser);
 }
 
-void CppParser::parse(const std::filesystem::path& filename,
-    const std::unordered_map<std::string,std::string>& defines,
-    Entity& root) {
-  assert(entities.empty());
-  assert(starts.empty());
-  assert(ends.empty());
+static bool cannot_contain_subentities(const RefVariant& ref) {
+  return ref.is_type<VariableEntity>();
+}
 
-  /* entity to represent file */
-  Entity file;
-  file.name = filename.filename().string();
-  file.decl = preprocess(filename, defines);
-  file.path = filename;
-  file.start_line = 0;
-  file.end_line = 0;
-  file.type = EntityType::FILE;
-  file.visible = true;
-  TextLineCursor file_content(file.decl);
+std::stack<CppParser::StackEntry>::const_reference CppParser::pop_entities_downto_parent(uint32_t start, [[maybe_unused]] uint32_t end) {
+  while(entities_stack.size() > 0 and
+    (entities_stack.top().end < start or cannot_contain_subentities(entities_stack.top().ref)
+    )
+  ) {
+    const bool is_child_visible = entities_stack.top().ref.is_visible();
+    const bool child_has_no_group =  entities_stack.top().ref.get_group().empty();
+    entities_stack.pop();
+    if (entities_stack.size() > 0 and child_has_no_group) {
+      entities_stack.top().ref.set_visible_child(is_child_visible);
+    }
+  }
+  if (entities_stack.size() == 0) {
+    throw std::runtime_error("no more elements in stack");
+  }
+  return entities_stack.top();
+}
 
+void CppParser::pop_all() {
+  while(entities_stack.size() > 0) {
+    const bool is_child_visible = entities_stack.top().ref.is_visible();
+    const bool child_has_no_group =  entities_stack.top().ref.get_group().empty();
+    entities_stack.pop();
+    if (entities_stack.size() > 0 and child_has_no_group) {
+      entities_stack.top().ref.set_visible_child(is_child_visible);
+    }
+  }
+}
 
-  /* parse */
-  TSTree* tree = ts_parser_parse_string(parser, NULL, file_content.data(),
-      uint32_t(file_content.size()));
+std::stack<CppParser::StackEntry>::reference CppParser::push(RefVariant ref, uint32_t start, uint32_t end) {
+  return entities_stack.emplace(ref, start, end);
+}
+
+uint32_t get_decl_end(const TextLineCursor& str, uint32_t start, uint32_t middle) {
+  while(middle > start && (
+      std::isspace(str[middle - 1])
+      or str[middle - 1] == '\\'
+      or str[middle - 1] == '='
+      or str[middle - 1] == ';'
+    )
+  ) {
+    middle--;
+  }
+  return middle;
+}
+
+enum class MatchAction {
+  NOTHING,
+  ENTITY,
+  NAMESPACE
+};
+
+struct DeclCoordinates {
+  uint32_t start;
+  uint32_t start_line;
+  uint32_t end;
+};
+
+struct EntityState {
+  uint32_t start = 0;
+  uint32_t end = 0;
+  uint32_t start_line = -1;
+  uint32_t end_line = -1;
+  uint32_t decl_end = -1;
+  QueryCppNodes entity_type;
+  bool is_nested = false;
+  bool matched_template = false;
+  std::optional<DeclCoordinates> template_decl;
+  TextLineCursor decl_field;
+  TextLineCursor name_field;
+
+  void set_offsets(const TSNode& node);
+
+  void update_decl_field(const TextLineCursor& file_content);
+
+  void reset();
+};
+
+void EntityState::set_offsets(const TSNode& node) {
+  start = ts_node_start_byte(node);
+  start_line = ts_node_start_point(node).row;
+  end = ts_node_end_byte(node);
+  end_line = ts_node_end_point(node).row;
+}
+
+void EntityState::update_decl_field(const TextLineCursor& file_content) {
+  uint32_t new_decl_end = get_decl_end(file_content, start, decl_end);
+  decl_field = file_content.substr(start, new_decl_end - start);
+}
+
+void EntityState::reset() {
+  is_nested = false;
+  template_decl.reset();
+  matched_template = false;
+}
+
+enum class CommentType {
+  NONDOC,
+  MULTI_FORWARD,
+  MULTI_BACKWARD,
+  SINGLE_CONTINUE,
+  QT_SINGLE_CONTINUE,
+  SINGLE_BACKWARD_OPEN,
+  QT_SINGLE_BACKWARD_OPEN
+};
+
+struct CommentState {
+  uint32_t begin = 0;
+  uint32_t end = 0;
+  uint32_t end_line = 0;
+  CommentType type = CommentType::NONDOC;
+};
+
+struct ParserState {
+  const TextLineCursor &file_content;
+  const FwdRef<FileEntity>& file;
+  const EntityRegistry& registry;
+  TSQuery* query;
+  EntityRegistry::EntityFileInserter& inserter;
+
+  uint32_t node_start;
+  uint32_t node_end;
+  uint32_t start_line;
+  std::optional<RefVariant> previous_match;
+};
+
+void check_group(Doc& docs, const ParserState& ps) {
+  if (not docs.ingroup.empty() and not ps.registry.get_group(docs.ingroup.view())) {
+    warn("file " << ps.file->get_path() << " line " << docs.ingroup.get_line_number() + 1 <<
+        ": unrecognized group '" << docs.ingroup.view() <<
+        "', groups must be defined in config file, ignoring @ingroup");
+    docs.drop_group();
+  }
+}
+
+void make_backward_docs(CommentState &doc_buffer, ParserState& ps) {
+  constexpr uint32_t NOLINE = std::numeric_limits<uint32_t>::max();
+  auto last_line_getter = [NOLINE]<entity T>(const FwdRef<T>& e) -> std::pair<uint32_t, uint32_t> {
+    if constexpr (not std::derived_from<T, CodeEntity>) {
+      return std::make_pair(NOLINE, NOLINE);
+    } else {
+      return std::make_pair(e->get_start_line(), e->get_end_line());
+    }
+  };
+  auto [entity_first_line, entity_last_line] = ps.previous_match ? std::visit(last_line_getter, *ps.previous_match) :
+   std::make_pair(NOLINE, NOLINE);
+
+  if (doc_buffer.end_line < entity_last_line or doc_buffer.end_line > entity_last_line + 1) {
+    return;
+  }
+  if (not ps.previous_match->get_docs().empty()) {
+    warn("entity " << ps.previous_match->get_name() << " in file " << ps.file->get_path()
+      << ", line " << entity_first_line << " - " << entity_last_line
+      << " already has a comment, but a second backward one exists starting at line "
+      << entity_last_line);
+  }
+  TextLineCursor comment = ps.file_content.substr(doc_buffer.begin, doc_buffer.end - doc_buffer.begin);
+  Doc docs = Doc::from_comment(comment);
+  check_group(docs, ps);
+  ps.previous_match->set_docs(std::move(docs));
+}
+
+// from https://www.doxygen.nl/manual/docblocks.html
+const std::regex comment_regex(
+  R"(^\s*)" // beginning of string, than any whitespace (ignore)
+  R"((?:)"  // start of non-capturing group
+  R"((\/\*[\*|!])(?!<))" // opening comment /** or /*!
+  R"(|)"
+  R"((\/\/\/)(?!<))" // line continuation comment /// (without <)
+  R"(|)"
+  R"((\/\/!)(?!<))" // Qt line continuation comment //! (without <)
+  R"(|)"
+  R"((\/\*[\*|!]<))" // backward opening comment /**< or /*!<
+  R"(|)"
+  R"((\/\/\/<))" // backward-looking comment ///<
+  R"(|)"
+  R"((\/\/!<))" // Qt backward-looking comment //!<
+  R"())", // end of non-capturing group
+  REGEX_FLAGS);
+
+CommentType get_comment_type(const TextLineCursor& text) {
+  // TODO: avoid heap allocations with CTRE
+  std::cmatch match;
+  if (std::regex_search(text.cbegin(), text.cend(), match, comment_regex)) {
+    if (match[1].matched) {
+      return CommentType::MULTI_FORWARD;
+    }
+    else if (match[2].matched) {
+      return CommentType::SINGLE_CONTINUE;
+    }
+    else if (match[3].matched) {
+      return CommentType::QT_SINGLE_CONTINUE;
+    }
+    else if (match[4].matched) {
+      return CommentType::MULTI_BACKWARD;
+    }
+    else if (match[5].matched) {
+      return CommentType::SINGLE_BACKWARD_OPEN;
+    }
+    else if (match[6].matched) {
+      return CommentType::QT_SINGLE_BACKWARD_OPEN;
+    }
+  }
+  return CommentType::NONDOC;
+}
+
+void handle_comment(CommentState& doc_buffer, ParserState& ps) {
+  CommentType type = get_comment_type(ps.file_content.substr(ps.node_start, ps.node_end - ps.node_start));
+
+  if(doc_buffer.type != type // comments are of different format
+    or ps.start_line > doc_buffer.end_line + 1 // or there is gap between comments
+  ) {
+    if(doc_buffer.type == CommentType::SINGLE_BACKWARD_OPEN
+      or doc_buffer.type == CommentType::QT_SINGLE_BACKWARD_OPEN
+    ) {
+      // if the previous one is backward, flush it
+      make_backward_docs(doc_buffer, ps);
+    }
+    // reset previous
+    doc_buffer.type = CommentType::NONDOC;
+  }
+
+  switch (type) {
+    case CommentType::NONDOC: {
+      // reset
+      doc_buffer = {0, 0, 0, CommentType::NONDOC};
+      break;
+    }
+    case CommentType::MULTI_BACKWARD: {
+      // process immediately
+      CommentState current{ps.node_start, ps.node_end, ps.start_line, type};
+      make_backward_docs(current, ps);
+      doc_buffer.type = CommentType::NONDOC;
+      break;
+    }
+    case CommentType::MULTI_FORWARD: {
+      doc_buffer = {ps.node_start, ps.node_end, ps.start_line, CommentType::MULTI_FORWARD};
+      break;
+    }
+    case CommentType::SINGLE_CONTINUE:
+    case CommentType::QT_SINGLE_CONTINUE:
+    case CommentType::SINGLE_BACKWARD_OPEN:
+    case CommentType::QT_SINGLE_BACKWARD_OPEN: {
+      if (doc_buffer.type == type) {
+        doc_buffer.end = ps.node_end;
+        doc_buffer.end_line = ps.start_line;
+      } else {
+        doc_buffer = {ps.node_start, ps.node_end, ps.start_line, type};
+      }
+      break;
+    }
+  }
+}
+
+void make_forward_docs(CommentState &doc_buffer, ParserState& ps, Doc& docs) {
+  if (doc_buffer.type == CommentType::MULTI_FORWARD
+    or doc_buffer.type == CommentType::SINGLE_CONTINUE
+    or doc_buffer.type == CommentType::QT_SINGLE_CONTINUE) {
+    auto text = ps.file_content.substr(doc_buffer.begin, doc_buffer.end - doc_buffer.begin);
+    docs = Doc::from_comment(text);
+    check_group(docs, ps);
+    doc_buffer.type = CommentType::NONDOC;
+  } else if(doc_buffer.type == CommentType::SINGLE_BACKWARD_OPEN
+    or doc_buffer.type == CommentType::QT_SINGLE_BACKWARD_OPEN
+  ) {
+    // if the previous one is backward, flush it
+    make_backward_docs(doc_buffer, ps);
+    doc_buffer.type = CommentType::NONDOC;
+  }
+}
+
+RefVariant make_entity(const EntityState &match_state, const RefVariant& parent, ParserState& ps, Doc& doc) {
+  auto& ms = match_state;
+  std::string_view entity_decl = ms.decl_field.view();
+  const bool visible = not doc.docs.empty();
+  std::optional<RefVariant> result_opt;
+  QueryCppNodes id = ms.entity_type;
+  auto name = ms.name_field.view();
+  uint32_t start_line = ms.start_line;
+  std::string_view template_decl;
+  if (ms.template_decl) {
+    std::size_t len = ms.template_decl->end - ms.template_decl->start;
+    start_line = ms.template_decl->start_line;
+    template_decl = std::string_view(ps.file_content.data() + ms.template_decl->start, len);
+  }
+
+  switch (id) {
+    case QueryCppNodes::FUNCTION: {
+        auto ref = ps.inserter.add_function(parent, template_decl, entity_decl,
+          name, ps.file, start_line, ms.end_line, std::move(doc), visible);
+        result_opt.emplace(ref);
+        break;
+    }
+    case QueryCppNodes::TYPE: {
+        auto ref = ps.inserter.add_type(parent, template_decl, entity_decl,
+          name, ps.file, start_line, ms.end_line, std::move(doc), visible);
+        result_opt.emplace(ref);
+        break;
+    }
+    case QueryCppNodes::VARIABLE: {
+      auto ref = ps.inserter.add_variable(parent, template_decl, entity_decl,
+        name, ps.file, start_line, ms.end_line, std::move(doc), visible);
+      result_opt.emplace(ref);
+      break;
+    }
+    case QueryCppNodes::CONCEPT: {
+      auto ref = ps.inserter.add_concept(parent, template_decl, entity_decl,
+        name, ps.file, start_line, ms.end_line, std::move(doc), visible);
+      result_opt.emplace(ref);
+      break;
+    }
+    case QueryCppNodes::OPERATOR: {
+      auto ref = ps.inserter.add_operator(parent, template_decl, entity_decl,
+        name, ps.file, start_line, ms.end_line, std::move(doc), visible);
+      result_opt.emplace(ref);
+      break;
+    }
+    case QueryCppNodes::ENUMERATOR: {
+      auto ref = ps.inserter.add_enum(parent, entity_decl,
+        name, ps.file, start_line, ms.end_line, std::move(doc), visible);
+      result_opt.emplace(ref);
+      break;
+    }
+    case QueryCppNodes::MACRO: {
+      auto ref = ps.inserter.add_macro(parent, entity_decl,
+        name, ps.file, start_line, ms.end_line, std::move(doc), visible);
+      result_opt.emplace(ref);
+      break;
+    }
+    case QueryCppNodes::TYPEDEF: {
+      auto ref = ps.inserter.add_typedef(parent, template_decl, entity_decl,
+        name, ps.file, start_line, ms.end_line, std::move(doc), visible);
+      result_opt.emplace(ref);
+      break;
+    }
+    default: {
+      uint32_t len = 0;
+      const char* name = ts_query_capture_name_for_id(ps.query, static_cast<uint32_t>(id), &len);
+      throw std::runtime_error(std::format("Error: unhandeld entity of type {}", name));
+      break;
+    }
+  }
+  return *result_opt;
+}
+
+static constexpr std::string_view NAMESPACE_SEPARATOR{"::"};
+
+std::pair<RefVariant, RefVariant> make_namespace(
+  const EntityState &match_state,
+  const RefVariant& parent,
+  ParserState& ps,
+  Doc& doc
+) {
+  auto& ms = match_state;
+  bool visible = not doc.docs.empty();
+  if (not ms.is_nested) {
+    RefVariant first = ps.inserter.add_namespace(parent, ms.decl_field.view(), ms.name_field.view(), ps.file, ms.start_line, ms.end_line, std::move(doc), visible);
+    return std::make_pair(first, first);
+  }
+  std::optional<FwdRef<NamespaceEntity>> first_opt;
+  std::optional<FwdRef<NamespaceEntity>> previous_opt;
+  auto parts = ms.name_field.view() | std::views::split(NAMESPACE_SEPARATOR);
+  Doc empty_doc;
+  const std::size_t name_offset = ms.name_field.data() - ms.decl_field.data();
+  std::size_t current_name_offset = 0;
+  for (auto it = parts.begin(); it != parts.end(); ++it) {
+    std::size_t name_len = std::ranges::distance(*it);
+    std::string_view name{ms.name_field.data() + current_name_offset, name_len};
+    std::string_view decl{ms.decl_field.data(), name_offset + current_name_offset + name_len};
+    current_name_offset += name_len + NAMESPACE_SEPARATOR.size(); // account for "::" separator
+    const bool is_last = std::next(it) == parts.end();
+    if (not is_last) {
+      empty_doc = Doc();
+    }
+    Doc& d = not is_last? empty_doc : doc;
+    auto entity = previous_opt ?
+      ps.inserter.add_namespace(*previous_opt, decl, name, ps.file, ms.start_line, ms.end_line, std::move(d), visible) :
+      ps.inserter.add_namespace(parent, decl, name, ps.file, ms.start_line, ms.end_line, std::move(d), visible);
+    if (not first_opt) {
+      // store the first ref to return
+      first_opt = entity;
+    }
+    previous_opt = entity;
+  }
+  return std::make_pair(*first_opt, *previous_opt);
+}
+
+void CppParser::parse(
+  EntityRegistry& registry,
+  const std::filesystem::path& filename,
+  const std::unordered_map<std::string, std::string>& defines
+) {
+  std::string _content = preprocess(filename, defines);
+  TSTree* tree = ts_parser_parse_string(parser, NULL, _content.data(), static_cast<uint32_t>(_content.size()));
   if (!tree) {
     /* something went very wrong */
     warn("cannot parse " << filename << ", skipping");
     return;
   } else {
     /* report on any remaining parse errors */
-    report(filename, file_content.view(), tree);
+    report(filename, _content, tree);
   }
 
-  /* query entity information */
   TSNode node = ts_tree_root_node(tree);
+  FwdRef<FileEntity> file_ref = registry.add_file(filename,
+    std::move(_content), ts_node_end_point(node).row + 1);
+  FwdRef<RootEntity> root_ref = registry.get_root_ref();
+  EntityRegistry::EntityFileInserter inserter = registry.get_inserter(file_ref);
 
-  file.start_line = 0;
-  file.end_line = ts_node_end_point(node).row;
-  file.line_counts.resize(file.end_line, -1);
+  push(root_ref, 0, ts_node_end_byte(node));
 
-  /* push root entity to stack */
-  push(std::move(root), ts_node_start_byte(node), ts_node_end_byte(node));
+  const TextLineCursor file_content(file_ref->get_content());
 
-  TSQueryCursor* cursor = ts_query_cursor_new();
-  ts_query_cursor_exec(cursor, query, node);
+  using unique_cursor_ptr = std::unique_ptr<TSQueryCursor, decltype(&ts_query_cursor_delete)>;
+  unique_cursor_ptr cursor(ts_query_cursor_new(), &ts_query_cursor_delete);
+  ts_query_cursor_exec(cursor.get(), query, node);
   TSQueryMatch match;
-  Entity entity;
-  int indent = 0;
+  EntityState match_state;
+  ParserState parser_state = {file_content, file_ref, registry, query, inserter, 0, 0, 0, {}};
+  CommentState doc_buffer;
 
-  uint32_t start = 0, middle = 0, end = 0;
-  uint32_t start_line = -1, end_line = -1;
-
-  std::function<void()> const update_state = [&] () {
-      start = ts_node_start_byte(node);
-      start_line = ts_node_start_point(node).row;
-      end = ts_node_end_byte(node);
-      end_line = ts_node_end_point(node).row;
-      middle = end;
-  };
-  while (ts_query_cursor_next_match(cursor, &match)) {
+  while (ts_query_cursor_next_match(cursor.get(), &match)) {
+    MatchAction action{MatchAction::NOTHING};
 
     for (uint16_t i = 0; i < match.capture_count; ++i) {
       node = match.captures[i].node;
       uint32_t id = match.captures[i].index;
-      uint32_t length = 0;
-      uint32_t k = ts_node_start_byte(node);
-      uint32_t l = ts_node_end_byte(node);
+      parser_state.node_start = ts_node_start_byte(node);
+      parser_state.node_end = ts_node_end_byte(node);
+      parser_state.start_line = ts_node_start_point(node).row;
+      uint32_t node_len = parser_state.node_end - parser_state.node_start;
+      // std::cout << "=== MATCHED " << to_string(static_cast<QueryCppNodes>(id)) << std::endl;
 
-      switch (id) {
-      case QueryCppNodes::DOCS: {
-        Doc doc(file_content.substr(k, l - k), indent);
-        Entity& e = doc.open.type == OPEN_BEFORE ? entity : entities.back();
-        e.docs.append(doc.docs);
-        e.hide = e.hide || doc.hide;
-        e.visible = !e.docs.empty();
-        if (!doc.ingroup.empty()) {
-          e.ingroup = doc.ingroup;
+      switch (static_cast<QueryCppNodes>(id)) {
+        case QueryCppNodes::DOCS: {
+          handle_comment(doc_buffer, parser_state);
+          break;
         }
-        indent = doc.indent;
-        break;
-      }
-      case QueryCppNodes::NESTED_NAME: {
-        assert(entity.type == EntityType::NAMESPACE);
-
-        /* pop the stack down to parent */
-        pop(start, end);
-
-        /* nested namespace specifier, e.g. `namespace a::b::c`, split up the
-         * name on `::`, push namespaces for the first n - 1 identifiers, and
-         * assign the last as the name of this entity */
-        static const std::regex sep("\\s*::\\s*", REGEX_FLAGS);
-
-        /* load into a std::string and use std::sregex_token_iterator;
-         * maintaining the std::string_view and using
-         * std::cregex_token_iterator seems to have memory issues when mixed
-         * with other local variables */
-        std::string name = file.decl.substr(k, l - k);
-        std::sregex_token_iterator ns_iter(name.begin(), name.end(), sep, -1);
-        std::sregex_token_iterator ns_end;
-        assert(ns_iter != ns_end);
-        std::string prev = *ns_iter;  // lag one
-        while (++ns_iter != ns_end) {
-          /* create parent entity */
-          Entity parent;
-          parent.type = EntityType::NAMESPACE;
-          parent.name = prev;
-          parent.path = filename;
-
-          push(std::move(parent), start, end);
-          prev = *ns_iter;
+        case QueryCppNodes::VALUE: {
+          break;
         }
-        entity.name = prev;
-        break;
-      }
-      case QueryCppNodes::NAME:
-        entity.name = file.decl.substr(k, l - k);
-        break;
-      case QueryCppNodes::BODY:
-        middle = ts_node_start_byte(node);
-        break;
-      case QueryCppNodes::VALUE:
-        middle = ts_node_start_byte(node);
-        break;
-      case QueryCppNodes::NAMESPACE:
-        update_state();
-        entity.type = EntityType::NAMESPACE;
-        break;
-      case QueryCppNodes::TEMPLATE:
-        update_state();
-        entity.type = EntityType::TEMPLATE;
-        break;
-      case QueryCppNodes::TYPE:
-        update_state();
-        entity.type = EntityType::TYPE;
-        break;
-      case QueryCppNodes::TYPEDEF:
-        update_state();
-        entity.type = EntityType::TYPEDEF;
-        break;
-      case QueryCppNodes::CONCEPT:
-        update_state();
-        entity.type = EntityType::CONCEPT;
-        break;
-      case QueryCppNodes::VARIABLE:
-        update_state();
-        entity.type = EntityType::VARIABLE;
-        break;
-      case QueryCppNodes::FUNCTION:
-        update_state();
-        entity.type = EntityType::FUNCTION;
-        break;
-      case QueryCppNodes::OPERATOR:
-        update_state();
-        entity.type = EntityType::OPERATOR;
-        break;
-      case QueryCppNodes::ENUMERATOR:
-        update_state();
-        entity.type = EntityType::ENUMERATOR;
-        break;
-      case QueryCppNodes::MACRO:
-        update_state();
-        entity.type = EntityType::MACRO;
-        break;
-      default:
-        const char* name = ts_query_capture_name_for_id(query, id, &length);
-        throw std::logic_error("unknown capture '" + std::string(name, length) + "'");
-        break;
-      }
-    }
-    if (entity.type != EntityType::ROOT) {
-      /* workaround for entity declaration logic catching punctuation, e.g.
-       * ending semicolon in declaration, the equals sign in a variable
-       * declaration with initialization, or whitespace */
-      while (middle > start && (file.decl[middle - 1] == ' ' ||
-          file.decl[middle - 1] == '\t' ||
-          file.decl[middle - 1] == '\n' ||
-          file.decl[middle - 1] == '\r' ||
-          file.decl[middle - 1] == '\\' ||
-          file.decl[middle - 1] == '=' ||
-          file.decl[middle - 1] == ';')) {
-        --middle;
-      }
-
-      entity.decl = file.decl.substr(start, middle - start);
-      entity.path = filename; // set in case of error, to report the file
-      entity.start_line = start_line;
-      entity.end_line = end_line;
-      entity.visible = !entity.docs.empty();
-
-      /* the final node represents the whole entity, pop the stack until we
-       * find its direct parent, as determined using nested byte ranges */
-      Entity& parent = pop(start, end);
-
-      /* override ingroup for entities that belong to a class or template, as
-       * cannot be moved out */
-      if (parent.type == EntityType::TYPE ||
-          parent.type == EntityType::TEMPLATE) {
-        entity.ingroup.clear();
-      }
-
-      /* push to stack */
-      if (parent.type == EntityType::TEMPLATE) {
-        /* merge this entity into the template */
-        parent.merge(std::move(entity));
-      } else {
-        push(std::move(entity), start, end);
-      }
-
-      /* reset */
-      entity.clear();
-    }
-  }
-
-  /* finalize entity information */
-  root = std::move(pop());
-
-  entities.pop_back();
-  starts.pop_back();
-  ends.pop_back();
-
-  ts_query_cursor_delete(cursor);
-
-  /* determine excluded byte ranges for code coverage */
-  std::list<std::pair<uint32_t,uint32_t>> excluded;
-  bool constexpr_context = false;
-  static const std::regex regex_if_constexpr("^(?:if\\s+)?constexpr",
-      REGEX_FLAGS);
-  cursor = ts_query_cursor_new();
-  node = ts_tree_root_node(tree);
-  ts_query_cursor_exec(cursor, query_exclude, node);
-  while (ts_query_cursor_next_match(cursor, &match)) {
-    for (uint16_t i = 0; i < match.capture_count; ++i) {
-      node = match.captures[i].node;
-      uint32_t id = match.captures[i].index;
-      uint32_t length = 0;
-      uint32_t start = ts_node_start_byte(node);
-      uint32_t end = ts_node_end_byte(node);
-      const char* name = ts_query_capture_name_for_id(query_exclude, id,
-          &length);
-      switch (id) {
-      case EXCLUDE:
-        excluded.push_back(std::make_pair(start, end));
-        break;
-      case THEN_EXCLUDE:
-        if (constexpr_context) {
-          excluded.push_back(std::make_pair(start, end));
-          constexpr_context = false;
+        case QueryCppNodes::NAME: {
+          match_state.name_field = file_content.substr(parser_state.node_start, node_len);
+          match_state.decl_end = parser_state.node_end;
+          break;
         }
-        break;
-      case IF_CONSTEXPR: {
-          std::string stmt = file.decl.substr(start, end - start);
-          constexpr_context = std::regex_search(stmt, regex_if_constexpr);
+        case QueryCppNodes::NESTED_NAME: {
+          match_state.name_field = file_content.substr(parser_state.node_start, node_len);
+          match_state.decl_end = parser_state.node_end;
+          match_state.is_nested = true;
         }
-        break;
-      default:
-        throw std::logic_error("unknown capture '" + std::string(name, length) + "'");
-        break;
-      }
-    }
-  }
-  ts_query_cursor_delete(cursor);
-
-  /* determine included lines for code coverage */
-  cursor = ts_query_cursor_new();
-  node = ts_tree_root_node(tree);
-  ts_query_cursor_exec(cursor, query_include, node);
-  while (ts_query_cursor_next_match(cursor, &match)) {
-    for (uint16_t i = 0; i < match.capture_count; ++i) {
-      node = match.captures[i].node;
-      uint32_t id = match.captures[i].index;
-      uint32_t start = ts_node_start_byte(node);
-      uint32_t end = ts_node_end_byte(node);
-      switch (id) {
-      case EXECUTABLE: {
-          /* executable code, update line data as long as the code is not
-          * within an excluded region */
-          bool exclude = std::any_of(excluded.begin(), excluded.end(),
-              [start,end](auto range) {
-                return range.first <= start && end <= range.second;
-              });
-          if (!exclude) {
-            uint32_t start_line = ts_node_start_point(node).row;
-            uint32_t end_line = ts_node_end_point(node).row;
-            for (uint32_t line = start_line; line <= end_line; ++line) {
-              if (file.line_counts[line] < 0) {
-                file.line_counts[line] = 0;
-                ++file.lines_included;
-              }
-            }
+        case QueryCppNodes::BODY: {
+          if (match_state.matched_template) {
+            match_state.template_decl->end = get_decl_end(file_content, match_state.template_decl->start, parser_state.node_start);
+            // done with template matching
+            match_state.matched_template = false;
+          } else {
+            match_state.decl_end = parser_state.node_start;
           }
+          break;
         }
+        case QueryCppNodes::CONCEPT:
+        case QueryCppNodes::OPERATOR:
+        case QueryCppNodes::ENUMERATOR:
+        case QueryCppNodes::MACRO:
+        case QueryCppNodes::TYPEDEF:
+        case QueryCppNodes::VARIABLE:
+        case QueryCppNodes::FUNCTION:
+        case QueryCppNodes::TYPE: {
+          action = MatchAction::ENTITY;
+          match_state.set_offsets(node);
+          match_state.entity_type = static_cast<QueryCppNodes>(id);
+          break;
+        }
+        case QueryCppNodes::TEMPLATE: {
+          match_state.template_decl = {parser_state.node_start, ts_node_start_point(node).row, parser_state.node_end };
+          match_state.matched_template = true;
+          break;
+        }
+        case QueryCppNodes::NAMESPACE: {
+          match_state.set_offsets(node);
+          action = MatchAction::NAMESPACE;
+          break;
+        }
+      }
+    }
+
+    switch (action) {
+      case MatchAction::NOTHING: {
         break;
-      default: {
-          uint32_t length = 0;
-          const char* name = ts_query_capture_name_for_id(query_include, id, &length);
-          throw std::logic_error("unknown capture '" + std::string(name, length) + "'");
+      }
+      case MatchAction::ENTITY: {
+        Doc docs;
+        make_forward_docs(doc_buffer, parser_state, docs);
+        match_state.update_decl_field(file_content);
+        RefVariant parent = pop_entities_downto_parent(match_state.start, match_state.end).ref;
+        if (parent.is_type<TypeEntity>()) {
+          docs.drop_group();
         }
+        if (not docs.ingroup.empty()) {
+          auto group = registry.get_group(docs.ingroup);
+          if (not group) {
+            throw std::logic_error(std::format("group \"{}\" not found in internal registry", docs.ingroup.view()));
+          }
+          parent = *group;
+        }
+        auto child = make_entity(match_state, parent, parser_state, docs);
+        parser_state.previous_match = child;
+        std::format_to(std::ostream_iterator<char>(std::cout), ">> entity created under {}: {:?}\n", parent, child);
+        // push child on top of the stack, based on the beginning and end of the entity
+        push(child, match_state.start, match_state.end);
+        match_state.reset();
+        docs = Doc();
+        break;
+      }
+      case MatchAction::NAMESPACE: {
+        Doc docs;
+        make_forward_docs(doc_buffer, parser_state, docs);
+        if (not docs.ingroup.empty()) {
+          warn("file " << filename.native() << " line " << docs.ingroup.get_line_number() + 1
+            << ": namespace cannot have @ingroup, ignoring");
+          docs.drop_group();
+        }
+        match_state.update_decl_field(file_content);
+        const RefVariant& parent_entry = pop_entities_downto_parent(match_state.start, match_state.end).ref;
+        auto [first_ns, last_ns] = make_namespace(match_state, parent_entry, parser_state, docs);
+        parser_state.previous_match = last_ns;
+        const std::string_view nested = match_state.is_nested ? "nested " : "";
+        std::format_to(std::ostream_iterator<char>(std::cout), ">> {}namespace created under {}: {:?}\n", nested, parent_entry, last_ns);
+        // push only the last namespace on the stack, since they are all in the same matching range
+        push(last_ns, match_state.start, match_state.end);
+        match_state.reset();
+        docs = Doc();
         break;
       }
     }
   }
-  ts_query_cursor_delete(cursor);
-
-  /* finish up */
-  root.add(std::move(file));
-  ts_tree_delete(tree);
-  ts_parser_reset(parser);
-
-  assert(entities.empty());
-  assert(starts.empty());
-  assert(ends.empty());
-}
-
-void CppParser::push(Entity&& entity, const uint32_t start, const uint32_t end) {
-  entities.push_back(std::move(entity));
-  starts.push_back(start);
-  ends.push_back(end);
-}
-
-Entity& CppParser::pop(const uint32_t start, const uint32_t end) {
-  while (entities.size() > 1 &&
-      (start < starts.back() || ends.back() < end ||
-      (start == 0 && end == 0))) {
-    Entity back = std::move(entities.back());
-    entities.pop_back();
-    if (back.ingroup.empty()) {
-      entities.back().add(std::move(back));
-    } else {
-      entities.front().add(std::move(back));
-    }
-    starts.pop_back();
-    ends.pop_back();
+  // flush existing comments in buffer
+  if (doc_buffer.type == CommentType::SINGLE_BACKWARD_OPEN
+    or doc_buffer.type == CommentType::QT_SINGLE_BACKWARD_OPEN
+  ) {
+    make_backward_docs(doc_buffer, parser_state);
   }
-  return entities.back();
+
+  // pop remaining entries to apply the child's visibility and empty the stack
+  pop_all();
 }
 
 std::string CppParser::preprocess(const std::filesystem::path& filename,
     const std::unordered_map<std::string,std::string>& defines) {
-  /* regex to detect preprocessor macro names */
-  static const std::regex macro(R"([A-Z_][A-Z0-9_]{2,})",
-      REGEX_FLAGS);
-
   std::string in = gulp(filename);
   TSTree* tree = ts_parser_parse_string(parser, NULL, in.data(),
       uint32_t(in.size()));

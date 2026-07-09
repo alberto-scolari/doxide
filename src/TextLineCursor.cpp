@@ -2,11 +2,6 @@
 #include <algorithm>
 #include <stdexcept>
 
-TextLineCursor::TextLineCursor(): _start(nullptr), _size(0), _line_num(0) {}
-
-TextLineCursor::TextLineCursor(const char* start, std::size_t size, std::size_t line_num):
-  _start(start), _size(size), _line_num(line_num) {}
-
 TextLineCursor::TextLineCursor(const std::string_view &v): TextLineCursor(v.data(), v.size(), 0) {}
 
 TextLineCursor::TextLineCursor(const std::string &v) : TextLineCursor(v.data(), v.size(), 0) {}

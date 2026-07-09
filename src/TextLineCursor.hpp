@@ -13,13 +13,13 @@
 class TextLineCursor {
 public:
 
-  using iterator = const char*;
-  using const_iterator = const char*;
+  using iterator = std::string_view::iterator;
+  using const_iterator = std::string_view::const_iterator;
 
   /**
    * Construct an empty cursor.
    */
-  TextLineCursor();
+  constexpr TextLineCursor(): _data(), _line_num(0) {}
 
   /**
    * Constructor from string_view.
@@ -36,20 +36,24 @@ public:
   explicit TextLineCursor(const std::string &v);
 
   /**
-   * Constructor from string_view.
+   * Copy constructor.
    *
    * @param v text tu cursor on.
    */
   TextLineCursor(const TextLineCursor &) = default;
 
+  TextLineCursor(TextLineCursor&&) = default;
+
   TextLineCursor& operator=(const TextLineCursor &) = default;
 
-  inline char operator[](std::size_t i) const noexcept { return _start[i]; }
+  inline char operator[](std::size_t i) const {
+    return _data[i];
+  }
 
   /**
    * Get the pointer to the underlying data.
    */
-  inline const char* data() const noexcept { return _start; }
+  // inline const char* data() const noexcept { return _data.data(); }
 
   /**
    * Get the number of the current line: *it is 0-based*.
@@ -59,14 +63,16 @@ public:
   /**
    * Get the number of characters in the text.
    */
-  inline std::size_t size() const noexcept { return _size; }
+  inline std::size_t size() const noexcept { return _data.size(); }
 
   /**
    * Get the text as a string_view.
    */
   inline std::string_view view() const noexcept {
-    return std::string_view(data(), size());
+    return _data;
   }
+
+  inline constexpr operator std::string_view() const noexcept { return view();}
 
   inline bool empty() const noexcept { return size() == 0; }
 
@@ -96,13 +102,13 @@ public:
    */
   TextLineCursor substr(const_iterator start, std::size_t length) const;
 
-  inline const char* begin() const noexcept { return _start; }
+  inline auto begin() const noexcept { return _data.begin(); }
 
-  inline const char* cbegin() const noexcept { return _start; }
+  inline auto cbegin() const noexcept { return _data.begin(); }
 
-  inline const char* end() const noexcept { return _start + _size; }
+  inline auto end() const noexcept { return _data.end(); }
 
-  inline const char* cend() const noexcept { return _start + _size; }
+  inline auto cend() const noexcept { return _data.end(); }
 
   /**
    * Converst to string.
@@ -121,11 +127,13 @@ public:
   void clear() noexcept;
 
 private:
-  const char* _start;
-  std::size_t _size;
+  // const char* _start;
+  // std::size_t _size;
+  std::string_view _data;
   std::size_t _line_num;
 
-  TextLineCursor(const char* start, std::size_t size, std::size_t line_start);
+  constexpr TextLineCursor(std::string_view data, std::size_t line_start):
+    _data(data), _line_num(line_start) {}
 
   void check_start(const_iterator start) const;
 

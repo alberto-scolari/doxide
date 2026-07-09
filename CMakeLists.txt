@@ -127,7 +127,6 @@ configure_file(
 add_executable(doxide
   src/doxide.cpp
   src/CppParser.cpp
-  src/Doc.cpp
   src/DocToken.cpp
   src/DocTokenizer.cpp
   src/Driver.cpp
@@ -138,8 +137,10 @@ add_executable(doxide
   src/MarkdownGenerator.cpp
   src/SourceWatcher.cpp
   src/TextLineCursor.cpp
+  src/Utils.cpp
   src/YAMLNode.cpp
   src/YAMLParser.cpp
+  src/doc_parser/StyleParsers.cpp
 )
 if(WIN32)
   # add icon

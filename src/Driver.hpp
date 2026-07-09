@@ -1,6 +1,9 @@
 #pragma once
 
 #include "Entity.hpp"
+#include "entities/EntityRegistry.hpp"
+
+#include <optional>
 
 #include <filesystem>
 #include <list>
@@ -97,6 +100,8 @@ private:
    * Root entity.
    */
   Entity root;
+
+  std::optional<EntityRegistry> registry;
 
   /**
    * Configuration file path.

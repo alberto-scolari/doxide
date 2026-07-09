@@ -141,6 +141,7 @@ add_executable(doxide
   src/YAMLNode.cpp
   src/YAMLParser.cpp
   src/doc_parser/StyleParsers.cpp
+  src/generation/Sanitize.cpp
 )
 if(WIN32)
   # add icon

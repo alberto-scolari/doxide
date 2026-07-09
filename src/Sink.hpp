@@ -29,7 +29,6 @@ private:
   iter_t _it;
 };
 
-
 class sink_t: public _sink_t<std::ostream, std::ostream_iterator<char>> {
 public:
   using _sink_t<std::ostream, std::ostream_iterator<char>>::_sink_t;

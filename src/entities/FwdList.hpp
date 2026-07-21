@@ -39,6 +39,7 @@ template<typename T> class FwdListIterator {
 public:
   using value_type = T;
   using reference = FwdRef<T>; // return the wrapped pointer
+  using const_reference = const FwdRef<T>; // return the wrapped pointer
   using difference_type = std::ptrdiff_t;
   using iterator_category = std::forward_iterator_tag;
 
@@ -48,7 +49,11 @@ public:
 
   constexpr FwdListIterator<T>& operator=(const FwdListIterator<T>& other) noexcept = default;
 
-  constexpr reference operator*() const noexcept {
+  constexpr reference operator*() noexcept {
+    return static_cast<FwdRef<T>>(*this);
+  }
+
+  constexpr const_reference operator*() const noexcept {
     return static_cast<FwdRef<T>>(*this);
   }
 
@@ -100,6 +105,14 @@ template<typename T> constexpr bool operator!=(const FwdListIterator<T>& it, Fwd
     return it.node_ != nullptr;
 }
 
+template<typename T> constexpr bool operator==(FwdListSentinel<T>, const FwdListIterator<T>& it) {
+    return it.node_ == nullptr;
+}
+
+template<typename T> constexpr bool operator!=(FwdListSentinel<T>, const FwdListIterator<T>& it) {
+    return it.node_ != nullptr;
+}
+
 template<typename T> class FwdList {
 public:
   using value_type = T;
@@ -110,6 +123,8 @@ public:
   using ConstNode = FwdListNode<const T>;
 
   constexpr FwdList() noexcept = default;
+
+  constexpr FwdList(const FwdList&) = delete;
 
   constexpr FwdList(FwdList&& other) noexcept
     : head_(other.head_), tail_(other.tail_), _size(0) {

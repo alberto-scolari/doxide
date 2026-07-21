@@ -1,6 +1,6 @@
-#include "Dfs_traversal.hpp"
+#pragma once
 
-#include "Sanitize.hpp"
+
 #include <entities/ContainerBases.hpp>
 #include <entities/Entities.hpp>
 #include <entities/GroupEntity.hpp>
@@ -8,6 +8,7 @@
 #include <entities/RefVariant.hpp>
 #include <entities/TypeEntity.hpp>
 #include "entities/EntityRegistry.hpp"
+#include "Sanitize.hpp"
 
 #include <array>
 #include <concepts>
@@ -15,7 +16,6 @@
 #include <format>
 #include <iterator>
 #include <ranges>
-#include <stack>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -48,17 +48,6 @@ using IterPackVariant = std::variant<
   entity_children_range_t<TypeEntity>,
   entity_children_range_t<NamespaceEntity>
 >;
-
-template<entity T, entity U> struct called {
-  template<typename F> IterPackVariant f(F&& fun) const {
-    if constexpr (container_of<T, U>) {
-      return fun();
-    } else {
-      throw std::logic_error(std::format("no entity of type '{}' is stored in an entity of type '{}'",
-        entity_name<U>(), entity_name<T>()));
-    }
-  }
-};
 
 template<entity T> constexpr IterPackVariant get_pack(std::size_t index, const FwdRef<T>& node, const EntityRegistry& registry) {
   constexpr std::string_view msg = "no entity of type '{}' is stored in an entity of type '{}'";
@@ -134,12 +123,11 @@ constexpr static IterPackVariant get_first_ref_variant(const RefVariant& ref, co
 
 // This visitor stores the navigation state of a *single* node. It tracks which
 // list we are looking at, and holds a type-safe iterator inside that active list.
-struct StackFrame {
+class EntityIterStack {
 private:
   template<typename F> constexpr decltype(auto) visit_storage_typed(F&& fun) {
     return std::visit([&fun]<entity T>(entity_children_range_t<T>& _storage)
       -> std::invoke_result_t<F, entity_children_range_t<T>&> {
-      // Dereferences the type-specific iterator to retrieve the concrete Node*
       static_assert(std::invocable<F, entity_children_range_t<T>&>, "fun is not invocable");
       return fun(_storage);
     }, range);
@@ -148,17 +136,16 @@ private:
   template<typename F> constexpr decltype(auto) visit_storage_typed(F&& fun) const {
     return std::visit([&fun]<entity T>(const entity_children_range_t<T>& _storage)
       -> std::invoke_result_t<F, const entity_children_range_t<T>&> {
-      // Dereferences the type-specific iterator to retrieve the concrete Node*
       static_assert(std::invocable<F, entity_children_range_t<T>&>, "fun is not invocable");
       return fun(_storage);
     }, range);
   }
 
-  // Initializes our current_it variant with the precise type-safe begin iterator
-  constexpr void step_to_valid_iter() {
-    std::visit([this]<entity T>(const FwdRef<T>& n) {
+  // initializes the variant with the precise type-safe begin iterator
+  constexpr void step_to_valid_iter(const EntityRegistry& registry) {
+    std::visit([this, &registry]<entity T>(const FwdRef<T>& n) {
       // move to the first set of iterators storing actual elements
-      while(not has_iter_elements() and PACK_ITER<T>.has_next(range.index())) {
+      while(not has_next() and PACK_ITER<T>.has_next(range.index())) {
         std::visit([this]<entity U>(entity_children_range_t<U>&& storage) {
           // because it's not copy assignable, access the internal state and move it
           range.template emplace<entity_children_range_t<U>>(std::move(storage));
@@ -168,36 +155,31 @@ private:
     }, node);
   }
 
-  // Verifies if our internal active iterator matches the end bounds of the respective container
-  constexpr bool has_iter_elements() const noexcept {
+public:
+  RefVariant node;
+  std::string sanitized_name;
+  // a variant capable of holding the active iterator type across any list configuration
+  IterPackVariant range;
+
+  constexpr EntityIterStack(const RefVariant& n, const std::string& sn, const EntityRegistry& registry) :
+    node(n), sanitized_name(sn), range(get_first_ref_variant(node, registry)) {
+    if (not has_next()) {
+      step_to_valid_iter(registry);
+    }
+  }
+
+  constexpr EntityIterStack(EntityIterStack&&) = default;
+
+  // verifies if the current iterator has elements
+  constexpr bool has_next() const {
     auto fun = []<entity T>(const entity_children_range_t<T>& range) -> bool {
       return range.iter != range.end;
     };
     return visit_storage_typed(fun);
   }
 
-public:
-  // A variant capable of holding the active iterator type across any list configuration
-  RefVariant node;
-  std::string sanitized_name;
-  const EntityRegistry& registry;
-  IterPackVariant range;
-
-  bool has_started_navigation = false; // Tracks if current_it matches the current list_index
-
-  constexpr StackFrame(const RefVariant& n, const std::string& sn, const EntityRegistry& r) :
-    node(n), sanitized_name(sn), registry(r), range(get_first_ref_variant(node, registry)) {
-    if (not has_iter_elements()) {
-      step_to_valid_iter();
-    }
-  }
-
-  constexpr bool has_children() const {
-    return has_iter_elements();
-  }
-
   // Returns the active child pointer safely packed inside a polymorphic NodeVariant wrapper
-  constexpr const RefVariant get_current_child() const {
+  constexpr const RefVariant get_next() const {
     auto fun = []<entity T>(const entity_children_range_t<T>& range) -> const RefVariant {
       return RefVariant(*range.iter);
     };
@@ -205,7 +187,7 @@ public:
   }
 
   // Manually steps the active type-safe iterator forward by one element
-  constexpr void advance_iterator() {
+  constexpr void advance_iterator(const EntityRegistry& registry) {
     auto fun = []<entity T>(entity_children_range_t<T>& range) -> bool {
       if (range.iter != range.end) {
         ++(range.iter);
@@ -216,42 +198,45 @@ public:
     if (visit_storage_typed(fun)) {
       return;
     };
-    step_to_valid_iter();
+    step_to_valid_iter(registry);
   }
 };
 
-RefVariantGenerator traverse_dfs_preorder(const EntityRegistry& registry, const std::filesystem::path& root_path) {
-  std::stack<StackFrame> stack;
+struct EntityStackController {
+  using stack_value = EntityIterStack;
+  using yield_value = std::tuple<const RefVariant, const std::string&, const std::filesystem::path&>;
+
+  const EntityRegistry& registry;
+  const std::filesystem::path& root_path;
   std::filesystem::path output_path = root_path;
-  stack.push(StackFrame{RefVariant(registry.get_root_ref()), "", registry});
 
-  while (not stack.empty()) {
-    StackFrame& current_frame = stack.top();
+  stack_value make_init() {
+    return stack_value{RefVariant(registry.get_root_ref()), "", registry};
+  }
 
-    // 1. Process Pre-Order: Yield the node when it is first encountered
-    // We only yield it if its navigation hasn't begun yet (list_index is 0 and it's not initialized)
-    if (not current_frame.has_started_navigation) {
-      current_frame.has_started_navigation = true;
-      co_yield std::tie(current_frame.node, current_frame.sanitized_name, output_path);
+  yield_value make_yield(const stack_value& top) {
+    return std::tie(top.node, top.sanitized_name, output_path);
+  }
+
+  bool has_next(const EntityIterStack& top) const {
+    return top.has_next();
+  }
+
+  stack_value make_next(stack_value& top) {
+    const RefVariant next_child = top.get_next();
+    // 4. Advance the active iterator so we don't process this exact child again
+    top.advance_iterator(registry);
+    // current_frame.advance_iterator();
+    if (not top.sanitized_name.empty()) {
+      output_path /= top.sanitized_name;
     }
+    // 5. Push the new child to the top of the stack to process it on the next loop iteration (DFS)
+    return stack_value{next_child, sanitize(next_child.get_name()), registry};
+  }
 
-    // 2. Query the stateful visitor to see if the current node has unvisited children left
-    if (not current_frame.has_children()) {
-      // Node processing completely finished, safely clear it out of the tracking stack
-      stack.pop();
-      if (not stack.empty() and not stack.top().sanitized_name.empty()) {
-        output_path = output_path.parent_path();
-      }
-    } else {
-      // 3. Extract the next nested child using the type mapping rules of our visitor
-      const RefVariant next_child = current_frame.get_current_child();
-      // 4. Advance the active iterator so we don't process this exact child again
-      current_frame.advance_iterator();
-      if (not current_frame.sanitized_name.empty()) {
-        output_path /= current_frame.sanitized_name;
-      }
-      // 5. Push the new child to the top of the stack to process it on the next loop iteration (DFS)
-      stack.push(StackFrame{next_child, sanitize(next_child.get_name()), registry});
+  void after_pop(const stack_value& top) {
+    if (not top.sanitized_name.empty()) {
+      output_path = output_path.parent_path();
     }
   }
-}
+};

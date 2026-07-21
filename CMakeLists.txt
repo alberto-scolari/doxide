@@ -139,7 +139,6 @@ add_executable(doxide
   src/TextLineCursor.cpp
   src/YAMLNode.cpp
   src/YAMLParser.cpp
-  src/generation/Dfs_traversal.cpp
   src/generation/Sanitize.cpp
 )
 if(WIN32)

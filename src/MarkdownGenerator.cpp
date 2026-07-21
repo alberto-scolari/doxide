@@ -12,6 +12,7 @@
 #include "entities/TypeEntity.hpp"
 #include "generation/Dfs_traversal.hpp"
 #include "generation/Sanitize.hpp"
+#include "generation/EntityIterStack.hpp"
 
 #include <algorithm>
 #include <concepts>
@@ -355,7 +356,8 @@ void MarkdownGenerator::render_entity(const EntityRegistry& registry, const std:
 
 void MarkdownGenerator::generate(const EntityRegistry& registry, [[maybe_unused]] bool cov) {
   sink_t sink;
-  for (const auto& [v, sanitized_name, output_path] : traverse_dfs_preorder(registry, output)) {
+  EntityStackController controller{registry, output};
+  for (const auto& [v, sanitized_name, output_path] : traverse_dfs_preorder(controller)) {
     sink.println("- getting entity: {} - \"{}\" - [sanitized: '{}'] on path {}",
       v.get_entity_name(), v.get_name(), sanitized_name, output_path.native());
     if (v.is_visible()) {

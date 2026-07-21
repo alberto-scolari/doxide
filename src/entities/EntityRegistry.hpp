@@ -1,21 +1,23 @@
 #pragma once
 
-#include "RootEntity.hpp"
-#include "GroupEntity.hpp"
-#include "TypeEntity.hpp"
-#include "FunctionEntity.hpp"
-#include "VariableEntity.hpp"
-#include "EnumEntity.hpp"
-#include "NamespaceEntity.hpp"
-#include "TypedefEntity.hpp"
 #include "ConceptEntity.hpp"
-#include "OperatorEntity.hpp"
-#include "MacroEntity.hpp"
-#include "FileEntity.hpp"
-#include "FwdList.hpp"
+#include "DirEntity.hpp"
 #include "Entities.hpp"
+#include "EnumEntity.hpp"
+#include "FileEntity.hpp"
+#include "FunctionEntity.hpp"
+#include "FwdList.hpp"
+#include "GroupEntity.hpp"
+#include "MacroEntity.hpp"
+#include "NamespaceEntity.hpp"
+#include "OperatorEntity.hpp"
 #include "RefVariant.hpp"
+#include "RootEntity.hpp"
+#include "TypeEntity.hpp"
+#include "VariableEntity.hpp"
+#include "TypedefEntity.hpp"
 
+#include <filesystem>
 #include <format>
 #include <iterator>
 #include <list>
@@ -26,6 +28,8 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
+
+#include <iostream>
 
 class EntityRegistry {
 
@@ -156,6 +160,8 @@ private:
     auto it = edges.find(e);
     return it != edges.cend() ? it->second.get_view() : entities_storage<ChildT>::get_empty_view();
   }
+
+  using subdir_map_t = std::unordered_map<std::string_view, FwdRef<DirEntity>>;
 
 public:
   EntityRegistry() = delete;
@@ -331,14 +337,51 @@ public:
     return EntityFileInserter(file->get_path(), *this);
   }
 
-  FwdRef<FileEntity> add_file(auto&&... args) {
-    return static_cast<FwdRef<FileEntity>>(file_entities.emplace_back(std::forward<decltype(args)>(args)...));
+  FwdRef<FileEntity> add_file(const std::filesystem::path& path, auto&&... args) {
+    if (path.empty() or not path.has_filename()) {
+      throw std::runtime_error(std::format("empty file path or no filename"));
+    }
+    namespace fs = std::filesystem;
+    auto dir_try_emplace = [&](subdir_map_t& map, std::string_view pathname) -> FwdRef<DirEntity> {
+        auto it = map.find(pathname);
+        if (it != map.end()) {
+            return it->second;
+        }
+        FwdRef<DirEntity> r = *directories.emplace_back(pathname);
+        roots_map.insert(std::pair(r->get_name(), r));
+        return r;
+    };
+
+    fs::path normalized = path.lexically_normal();
+    auto path_it = normalized.begin();
+    fs::path current_path = *path_it;
+    if (current_path == normalized) {
+      // the path contains only the file: add "fictitious" root path "./"
+      current_path = DEF_ROOT_PATH;
+    } else {
+      // skip the root, which we have already read
+      ++path_it;
+    }
+    auto last_component = --normalized.end(); // component with the file name
+    FwdRef<DirEntity> current_dir = dir_try_emplace(roots_map, current_path.native());
+    while(path_it != last_component) {
+      current_path /= *path_it;
+      auto& subdir_map = dir_subdir_entity_map[current_dir];
+      current_dir = dir_try_emplace(subdir_map, current_path.native());
+      ++path_it;
+    }
+    FwdRef<FileEntity> file = *file_entities.emplace_back(path, std::forward<decltype(args)>(args)...);
+    auto& files_map = dir_file_map[current_dir];
+    auto [it, newly_created] = files_map.try_emplace(normalized.native(), file);
+    if (not newly_created) {
+      file_entities.erase(file);
+      throw std::runtime_error(std::format("file '{}' was already added", normalized.native()));
+    }
+    return it->second;
   }
 
-  template<entity T> auto _get_nodes_view(const FwdList<T>& nodes) const noexcept {
-    return std::views::iota(nodes.cbegin(), nodes.cend()) | std::views::transform([](const auto& it) {
-      return static_cast<FwdRef<const T>>(it);
-    });
+  std::ranges::view decltype(auto) get_roots() const noexcept {
+    return std::views::values(roots_map);
   }
 
   inline const auto& get_types_view() const noexcept { return type_entities; }
@@ -586,4 +629,13 @@ private:
   std::unordered_map<std::string_view, FwdRef<GroupEntity>> name_group_map;
   // indexed by file first and then group name
   std::unordered_map<std::string_view, std::unordered_map<std::string_view, file_catalog>> filename_group_catalogs_map;
+
+
+
+  static inline constexpr std::string_view DEF_ROOT_PATH = "./";
+
+  FwdList<DirEntity> directories;
+  subdir_map_t roots_map;
+  std::unordered_map<FwdHashable, subdir_map_t> dir_subdir_entity_map;
+  std::unordered_map<FwdHashable, std::unordered_map<std::string_view, FwdRef<FileEntity>>> dir_file_map;
 };

@@ -1,6 +1,7 @@
 #include "Driver.hpp"
 
 #include "CppParser.hpp"
+#include "generation/Dfs_traversal.hpp"
 #include "GcovCounter.hpp"
 #include "JSONCounter.hpp"
 #include "JSONGenerator.hpp"
@@ -13,6 +14,7 @@
 
 #include <glob/glob.hpp>
 #include <chrono>
+#include <format>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -211,9 +213,10 @@ void Driver::build() {
   config();
   parse();
   count();
+  // fsinfo.explore();
 
   MarkdownGenerator generator(output);
-  generator.generate(*registry, !coverage.empty());
+  generator.generate(*registry, fsinfo, !coverage.empty());
   generator.clean();
 }
 
@@ -280,7 +283,7 @@ void Driver::watch() {
       count();
 
       MarkdownGenerator generator(output);
-      generator.generate(*registry, !coverage.empty());
+      generator.generate(*registry, fsinfo, !coverage.empty());
       generator.clean();
 
       std::cout << "Done" << std::endl;
@@ -401,7 +404,15 @@ void Driver::config() {
 void Driver::parse() {
   CppParser parser;
   for (const auto& filename: filenames) {
-    parser.parse(*registry, filename, defines);
+    auto fp = filename.lexically_normal();
+    if (fsinfo.contains(fp)) {
+      throw std::runtime_error(std::format("file \"{}\" is already parsed", fp.native()));
+    }
+    std::optional<FwdRef<FileEntity>> file = parser.parse(*registry, fp, defines);
+    if (not file) {
+      continue;
+    }
+    fsinfo.add_file(fp, *file);
   }
 }
 
@@ -411,16 +422,31 @@ void Driver::count() {
       auto ext = coverage.extension();
       if (ext == ".gcov") {
         GcovCounter counter;
-        counter.count(coverage, root);
+        counter.count(coverage, fsinfo);
       } else if (ext == ".json") {
         JSONCounter counter;
-        counter.count(coverage, root);
+        counter.count(coverage, fsinfo);
       } else {
         throw std::runtime_error("unrecognized file extension on " +
             coverage.string());
       }
+      aggregate_stats();
     } catch (const std::runtime_error& e) {
       warn(e.what() << ", coverage will be reported as zero");
+    }
+  }
+}
+
+void Driver::aggregate_stats() {
+  DirStackController controller{fsinfo};
+  // std::cout << "AGGREGATE\n";
+  for (auto& [path, dirinfo]: traverse_dfs_preorder<DirStackController, false>(controller)) {
+    // std::cout << path << "\n";
+    for(const FwdRef<FileEntity> fe: dirinfo.files) {
+      dirinfo.stats += *fe;
+    }
+    for(const auto& sd: dirinfo.subdirs) {
+      dirinfo.stats += fsinfo.lookup_dir(sd)->get().stats;
     }
   }
 }

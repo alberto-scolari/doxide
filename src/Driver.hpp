@@ -2,11 +2,11 @@
 
 #include "Entity.hpp"
 #include "entities/EntityRegistry.hpp"
-
-#include <optional>
+#include "FileSystemInfo.hpp"
 
 #include <filesystem>
 #include <list>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -86,6 +86,8 @@ private:
    */
   void count();
 
+  void aggregate_stats();
+
   /**
    * Recursively read groups from the configuration file.
    */
@@ -117,4 +119,6 @@ private:
    * Files.
    */
   std::unordered_set<std::filesystem::path> filenames;
+
+  FileSystemInfo fsinfo;
 };

@@ -59,7 +59,9 @@ template<typename T> concept dfs_stack_controller = requires (T& c) {
 
   { c.has_next(std::declval<const typename T::stack_value&>()) } -> std::convertible_to<bool>;
 
-  c.after_pop(std::declval<typename T::stack_value&>());
+  c.after_pop(std::declval<const typename T::stack_value&>());
+
+  c.before_pop(std::declval<const typename T::stack_value&>());
 };
 
 // stack_controller_t handles potential global state to be modified during stack manipulation;
@@ -80,14 +82,16 @@ template<typename T> concept dfs_stack_controller = requires (T& c) {
 //
 // const stack_t& make_yield(const stack_t& top) { return top; }
 //
-template<dfs_stack_controller stack_controller_t>
+template<dfs_stack_controller stack_controller_t, bool pre_traversal = true>
 CoroIterGenerator<typename stack_controller_t::yield_value> traverse_dfs_preorder(stack_controller_t& controller) {
   using stack_t = typename stack_controller_t::stack_value;
   std::stack<stack_t> stack;
 
   stack.push(controller.make_init());
-  // pre-order traversal: push and visit immediately
-  co_yield controller.make_yield(stack.top());
+  if constexpr (pre_traversal) {
+    // pre-order traversal: push and visit immediately
+    co_yield controller.make_yield(stack.top());
+  }
 
   while (not stack.empty()) {
     stack_t& current_frame = stack.top();
@@ -95,10 +99,17 @@ CoroIterGenerator<typename stack_controller_t::yield_value> traverse_dfs_preorde
     if (controller.has_next(current_frame)) {
       // push the new child to the top of the stack to process it on the next loop iteration (DFS)
       stack.push(controller.make_next(current_frame));
-      // pre-order traversal: push and visit immediately
-      co_yield controller.make_yield(stack.top());
+      if constexpr (pre_traversal) {
+        // pre-order traversal: push and visit immediately
+        co_yield controller.make_yield(stack.top());
+      }
     } else {
+      if constexpr (not pre_traversal) {
+        // pre-order traversal: push and visit immediately
+        co_yield controller.make_yield(stack.top());
+      }
       // node processing finished, safely clear it out of the stack
+      controller.before_pop(stack.top());
       stack.pop();
       if (not stack.empty()) {
         controller.after_pop(stack.top());

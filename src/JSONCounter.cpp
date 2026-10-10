@@ -1,9 +1,9 @@
 #include "JSONCounter.hpp"
 
-#include "Entity.hpp"
 #include "Log.hpp"
 #include "YAMLNode.hpp"
 #include "YAMLParser.hpp"
+#include "FileSystemInfo.hpp"
 
 #include <stddef.h>
 #include <list>
@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-void JSONCounter::count(const std::filesystem::path& coverage, Entity& root) {
+void JSONCounter::count(const std::filesystem::path& coverage, FileSystemInfo& fsinfo) {
   YAMLParser parser;
   YAMLNode node = parser.parse(coverage);
   if (!node.isSequence("files")) {
@@ -29,31 +29,30 @@ void JSONCounter::count(const std::filesystem::path& coverage, Entity& root) {
         /* make the path relative to the current working directory */
         path = std::filesystem::relative(path);
       }
-      if (root.exists(path)) {  // otherwise not included
+      path = path.lexically_normal();
+      std::optional<FwdRef<FileEntity>> file = fsinfo.lookup_file(path);
+      if (file) {  // otherwise not included
         /* update line coverage for this file */
-        std::list<Entity*> es = root.get(path);
-        Entity* file = es.back();
-        size_t nlines = file->line_counts.size();
+        FwdRef<FileEntity> f = *file;
+        size_t nlines = f->get_line_counts().size();
         for (auto line : lines) {
           if (!line->has("line_number")) {
-            warn("missing 'line_number' key in 'lines' element in " << file);
+            warn("missing 'line_number' key in 'lines' element in " << f->get_name());
           } else if (!line->has("count")) {
-            warn("missing 'count' key in 'lines' element in " << file);
+            warn("missing 'count' key in 'lines' element in " << f->get_name());
           } else {
             int line_number = std::stoi(line->value("line_number")) - 1;
             int count = std::stoi(line->value("count"));
             if (line_number < 0 || size_t(line_number) >= nlines) {
-              warn("in " << file << ", " << path << ":" << line_number <<
+              warn("in " << path << ":" << line_number <<
                   " does not exist; ignoring, are source and coverage" <<
                   " files in sync?");
             } else if (count > 0) {
-              int& line_count = file->line_counts[line_number];
+              int& line_count = f->get_line_counts()[line_number];
               if (line_count == 0) {
                 /* line is included in report and first time seeing it
                  * covered, update aggregate counts for whole path */
-                for (auto e : es) {
-                  ++e->lines_covered;
-                }
+                f->increment_covered_lines();
               }
               if (line_count >= 0) {
                 /* line is included in report, update count */

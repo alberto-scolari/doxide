@@ -1,19 +1,17 @@
 #include "GcovCounter.hpp"
 
-#include "Entity.hpp"
 #include "Log.hpp"
 #include "Regex.hpp"
 
+#include "FileSystemInfo.hpp"
+
 #include <stddef.h>
-#include <algorithm>
 #include <fstream>
-#include <list>
 #include <regex>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
-void GcovCounter::count(const std::filesystem::path& coverage, Entity& root) {
+void GcovCounter::count(const std::filesystem::path& coverage, FileSystemInfo& fsinfo) {
   /*
   * A sketch of the format is:
   * ```
@@ -51,14 +49,12 @@ void GcovCounter::count(const std::filesystem::path& coverage, Entity& root) {
   }
 
   std::filesystem::path path;
-  bool include = false;
 
-  std::list<Entity*> es;
-  Entity* file = nullptr;
-  size_t nlines = 0;  // number of lines in file
+  std::size_t nlines = 0;  // number of lines in file
   int max_line_number = 0;  // highest line number seen so far
   std::string line;
   std::smatch match;
+  std::optional<FwdRef<FileEntity>> file;
 
   while (std::getline(in, line)) {
     if (std::regex_match(line, match, regex_source)) {
@@ -67,32 +63,29 @@ void GcovCounter::count(const std::filesystem::path& coverage, Entity& root) {
       if (path.is_absolute()) {
         path = std::filesystem::relative(path);
       }
-      include = root.exists(path);
-      if (include) {
-        es = root.get(path);
-        file = es.back();
-        nlines = file->line_counts.size();
+      path = path.lexically_normal();
+      file = fsinfo.lookup_file(path);
+      if (file) {
+        nlines = (*file)->get_line_counts().size();
         max_line_number = 0;
       }
-    } else if (include && std::regex_match(line, match, regex_covered)) {
+    } else if (file && std::regex_match(line, match, regex_covered)) {
       /* line data */
       int line_number = std::stoi(match[2]) - 1;
       int count = std::stoi(match[1]);
-      if (line_number < 0 || size_t(line_number) >= nlines) {
-        warn("in " << file << ", " << path << ":" << line_number <<
+      if (line_number < 0 or static_cast<std::size_t>(line_number) >= nlines) {
+        warn("in " << path << ":" << line_number <<
             " does not exist; ignoring, are source and coverage" <<
             " files in sync?");
       } else if (count > 0 && line_number > max_line_number) {
         // ^ the check against max_line_number means skipping lines with
         //   disaggregated counts that have already been accounted for in
         //   aggregated counts
-        int& line_count = file->line_counts[line_number];
+        int& line_count = (*file)->get_line_counts()[line_number];
         if (line_count == 0) {
           /* line is included in report and first time seeing it covered,
-           * update aggregate counts for whole path */
-          for (auto e : es) {
-            ++e->lines_covered;
-          }
+           * update aggregate counts for the file */
+          (*file)->increment_covered_lines();
         }
         if (line_count >= 0) {
           /* line is included in report, update count */

@@ -218,7 +218,7 @@ struct EntityStackController {
     return std::tie(top.node, top.sanitized_name, output_path);
   }
 
-  bool has_next(const EntityIterStack& top) const {
+  bool has_next(const stack_value& top) const {
     return top.has_next();
   }
 
@@ -233,6 +233,8 @@ struct EntityStackController {
     // 5. Push the new child to the top of the stack to process it on the next loop iteration (DFS)
     return stack_value{next_child, sanitize(next_child.get_name()), registry};
   }
+
+  void before_pop(const stack_value&) {}
 
   void after_pop(const stack_value& top) {
     if (not top.sanitized_name.empty()) {

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "Entity.hpp"
-
 #include <filesystem>
+
+class FileSystemInfo;
 
 /**
  * Gcov processor for coverage data.
@@ -17,5 +17,5 @@ public:
    * @param file Coverage file.
    * @param root Root entity.
    */
-  void count(const std::filesystem::path& file, Entity& root);
+  void count(const std::filesystem::path& file, FileSystemInfo& fsinfo);
 };

@@ -134,6 +134,7 @@ add_executable(doxide
   src/GcovCounter.cpp
   src/JSONCounter.cpp
   src/JSONGenerator.cpp
+  src/FileSystemInfo.cpp
   src/MarkdownGenerator.cpp
   src/SourceWatcher.cpp
   src/TextLineCursor.cpp

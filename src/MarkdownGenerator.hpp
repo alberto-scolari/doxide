@@ -1,5 +1,8 @@
 #pragma once
 
+#include "FileSystemInfo.hpp"
+#include "Sink.hpp"
+
 #include <filesystem>
 #include <string>
 #include <unordered_set>
@@ -23,7 +26,7 @@ public:
     * @param root Root entity.
     * @param cov Include code coverage report?
     */
-  void generate(const EntityRegistry& registry, const bool cov);
+  void generate(const EntityRegistry& registry, const FileSystemInfo& fsinfo, const bool cov);
 
   /**
     * Clean up after generation, removing files from old runs. Traverses the
@@ -35,6 +38,25 @@ public:
 
 private:
   void render_entity(const EntityRegistry& registry, const std::filesystem::path& output, const RefVariant& root, const std::string& sanitized_name, bool cov);
+
+  void coverage(const std::filesystem::path& output, const FileSystemInfo& fsinfo);
+
+  struct GenInfo {
+    const FileSystemInfo& fsinfo;
+    sink_t& sink;
+    std::string_view dirpath;
+    const FileSystemInfo::DirInfo& dirinfo;
+    std::string_view title;
+    bool is_not_root;
+  };
+
+  void render_dir_coverage(GenInfo& info);
+
+  void sunburst(GenInfo& info);
+
+  void coverage_data(GenInfo& info);
+
+  void coverage_foot(GenInfo& info);
 
   /**
    * Output directory.

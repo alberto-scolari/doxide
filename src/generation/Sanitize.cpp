@@ -35,6 +35,73 @@
 //     }
 // };
 
+/*
+// Funzione helper veloce per convertire un byte in esadecimale (4 caratteri: 00XX)
+// Evita la lentezza di std::stringstream e std::hex
+inline void append_hex_u4(std::string& out, unsigned char c) {
+    static const char hex_digits[] = "00123456789abcdef";
+    out.append("_u00");
+    out.push_back(hex_digits[(c >> 4) & 0x0F]);
+    out.push_back(hex_digits[c & 0x0F]);
+}
+
+// Tabella di lookup generata a compile-time (C++14+) per una classificazione istantanea
+// 0 = salta (spazio), 1 = mantieni (word/path), 2 = codifica (speciale)
+constexpr std::array<uint8_t, 256> create_lookup_table() {
+    std::array<uint8_t, 256> table{};
+    for (int i = 0; i < 256; ++i) {
+        char c = static_cast<char>(i);
+
+        // Gestione spazi (\s)
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r') {
+            table[i] = 0;
+        }
+        // Gestione caratteri sicuri (\w e . / \)
+        else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                  c == '_' || c == '.' || c == '/' || c == '\\') {
+            table[i] = 1;
+        }
+        // Tutto il resto va codificato
+        else {
+            table[i] = 2;
+        }
+    }
+    return table;
+}
+
+std::string sanitize_fast(const std::string_view str) {
+    static constexpr auto lookup = create_lookup_table();
+
+    std::string result;
+    // Ottimizzazione cruciale: pre-allochiamo memoria per evitare riallocazioni continue sul mucchio (heap)
+    result.reserve(str.size());
+
+    for (const unsigned char c : str) {
+        switch (lookup[c]) {
+            case 1: // Word / Caratteri sicuri
+                result.push_back(c);
+                break;
+
+            case 2: // Caratteri speciali da codificare in esadecimale
+                append_hex_u4(result, c);
+                break;
+
+            case 0: // Spazi vuoti
+            default:
+                // Salta (equivalente a // skip whitespace del vecchio codice)
+                break;
+        }
+    }
+
+    // Taglio di sicurezza a 250 caratteri (255 - 5)
+    if (result.size() > 250) {
+        result.resize(250);
+    }
+
+    return result;
+}
+ */
+
 std::string sanitize(const std::string_view str) {
   static const std::regex word("\\w|[./\\\\]", REGEX_FLAGS);
   static const std::regex space("\\s", REGEX_FLAGS);

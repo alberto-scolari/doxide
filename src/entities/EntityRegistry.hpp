@@ -1,21 +1,22 @@
 #pragma once
 
-#include "RootEntity.hpp"
-#include "GroupEntity.hpp"
-#include "TypeEntity.hpp"
-#include "FunctionEntity.hpp"
-#include "VariableEntity.hpp"
-#include "EnumEntity.hpp"
-#include "NamespaceEntity.hpp"
-#include "TypedefEntity.hpp"
 #include "ConceptEntity.hpp"
-#include "OperatorEntity.hpp"
-#include "MacroEntity.hpp"
-#include "FileEntity.hpp"
-#include "FwdList.hpp"
 #include "Entities.hpp"
+#include "EnumEntity.hpp"
+#include "FileEntity.hpp"
+#include "FunctionEntity.hpp"
+#include "FwdList.hpp"
+#include "GroupEntity.hpp"
+#include "MacroEntity.hpp"
+#include "NamespaceEntity.hpp"
+#include "OperatorEntity.hpp"
 #include "RefVariant.hpp"
+#include "RootEntity.hpp"
+#include "TypeEntity.hpp"
+#include "VariableEntity.hpp"
+#include "TypedefEntity.hpp"
 
+#include <filesystem>
 #include <format>
 #include <iterator>
 #include <list>
@@ -158,6 +159,8 @@ private:
   }
 
 public:
+
+
   EntityRegistry() = delete;
 
   EntityRegistry(const std::string& title, const std::string& docs) {
@@ -331,14 +334,12 @@ public:
     return EntityFileInserter(file->get_path(), *this);
   }
 
-  FwdRef<FileEntity> add_file(auto&&... args) {
-    return static_cast<FwdRef<FileEntity>>(file_entities.emplace_back(std::forward<decltype(args)>(args)...));
-  }
-
-  template<entity T> auto _get_nodes_view(const FwdList<T>& nodes) const noexcept {
-    return std::views::iota(nodes.cbegin(), nodes.cend()) | std::views::transform([](const auto& it) {
-      return static_cast<FwdRef<const T>>(it);
-    });
+  FwdRef<FileEntity> add_file(const std::filesystem::path& path, auto&&... args) {
+    if (path.empty() or not path.has_filename()) {
+      throw std::runtime_error(std::format("empty file path or no filename"));
+    }
+    std::filesystem::path normalized = path.lexically_normal();
+    return *file_entities.emplace_back(normalized, std::forward<decltype(args)>(args)...);
   }
 
   inline const auto& get_types_view() const noexcept { return type_entities; }

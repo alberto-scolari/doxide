@@ -1,18 +1,20 @@
 #pragma once
 
-#include "doc_parser/DocParser.hpp"
-#include "entities/Entities.hpp"
+#include "entities/FileEntity.hpp"
 #include "entities/FwdRef.hpp"
 #include "entities/RefVariant.hpp"
 
 #include <cstdint>
 #include <tree_sitter/api.h>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <stack>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+
+class DocParser;
 
 class EntityRegistry;
 

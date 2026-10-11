@@ -3,7 +3,6 @@
 #include "Log.hpp"
 #include "Regex.hpp"
 
-#include <initializer_list>
 #include <regex>
 #include <utility>
 

@@ -1,11 +1,8 @@
 #include "MarkdownGenerator.hpp"
 
-#include <Log.hpp>
-#include <FileSystemInfo.hpp>
+#include <FSCleaner.hpp>
 #include <Sink.hpp>
 #include <Utils.hpp>
-#include <YAMLParser.hpp>
-#include <YAMLNode.hpp>
 #include <entities/ContainerBases.hpp>
 #include <entities/Entities.hpp>
 #include <entities/EntityRegistry.hpp>
@@ -13,6 +10,13 @@
 #include <entities/NamespaceEntity.hpp>
 #include <entities/RefVariant.hpp>
 #include <entities/TypeEntity.hpp>
+#include "entities/ConceptEntity.hpp"
+#include "entities/FunctionEntity.hpp"
+#include "entities/MacroEntity.hpp"
+#include "entities/OperatorEntity.hpp"
+#include "entities/TypedefEntity.hpp"
+#include "entities/VariableEntity.hpp"
+#include "generation/DocRenderer.hpp"
 
 #include "Dfs_traversal.hpp"
 #include "EntityIterStack.hpp"
@@ -20,7 +24,6 @@
 #include "Sanitize.hpp"
 
 #include <algorithm>
-#include <concepts>
 #include <fstream>
 #include <ranges>
 #include <string_view>
@@ -29,17 +32,6 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
-
-class ConceptEntity;
-class Documentable;
-class FunctionEntity;
-class GroupEntity;
-class MacroEntity;
-class OperatorEntity;
-class RootEntity;
-class Titled;
-class TypedefEntity;
-class VariableEntity;
 
 // checks that R is a range whose double de-ref value is an entity
 template<typename R> concept entity_range = requires (R r) {
@@ -67,20 +59,23 @@ template<typename R>
   return;
 }
 
-template<entity U> constexpr std::string_view get_title(const FwdRef<U>& e) {
-  if constexpr (std::derived_from<U, Titled>) {
-    return e->get_title();
-  } else {
-    return e->get_name();
-  }
-}
+template <typename T>
+class assigner_closure {
+    std::vector<T>& dest_vec;
 
-template<entity_range R> void print_md_section_link(sink_t& sink, R &&entities,
-  std::string_view section_name) {
-  for (const auto&  e: entities) {
-    sink.println(":{}: [{}]({}/)\n:   {}", section_name, get_title(e),
-      sanitize(e->get_name()), line(brief(e)));
-  }
+public:
+    explicit assigner_closure(std::vector<T>& vec) : dest_vec(vec) {}
+
+    template <std::ranges::input_range R> friend void operator|(R&& range, assigner_closure closure) {
+      if constexpr (std::ranges::sized_range<R>) {
+          closure.dest_vec.reserve(std::ranges::size(range));
+      }
+      closure.dest_vec.assign(std::ranges::begin(range), std::ranges::end(range));
+    }
+};
+
+template <typename T> auto assigner(std::vector<T>& vec) {
+    return assigner_closure<T>(vec);
 }
 
 void print_md_table_file_link(sink_t& sink, entity_range auto&& entities, std::string_view caption) {
@@ -121,30 +116,7 @@ void print_html_details(sink_t& sink, entity_range auto &&entities, std::string_
   }
 }
 
-template<bool enabled, typename ValueT> struct vector_storage {};
-
-template<typename ValueT> struct vector_storage< true, ValueT> {
-
-  using StorageT = std::vector<ValueT>;
-
-  StorageT& operator=(StorageT&& v) {
-    storage = std::move(v);
-    return storage;
-  }
-
-  template<std::ranges::range R> StorageT& operator=(R&& v) {
-    storage.assign(std::ranges::begin(v), std::ranges::end(v));
-    return storage;
-  }
-
-  StorageT& operator*() { return storage; }
-
-  StorageT* operator->() { return &storage; }
-
-  StorageT storage;
-};
-
-template<entity T> void render_entity_ref(
+template<entity T> void MarkdownGenerator::render_entity(
   sink_t& sink, const EntityRegistry& registry, const FwdRef<T>& root,
   const std::optional<std::string_view>& coverage_directory) {
 
@@ -158,134 +130,128 @@ template<entity T> void render_entity_ref(
   }
   sink.println("{}\n", root->get_docs());
 
+  auto& doc_renderer = doc_render_factory->get_renderer(sink);
+
   if constexpr (groups_container<T>) {
     // anybody can see groups, but only Root is tagged as GroupsContainer
-    auto groups = get_visible_view(registry.get_groups_view());
-    print_md_section_link(sink, groups, "material-format-section");
+    get_visible_view(registry.get_groups_view()) | assigner(group_buffer);
+    doc_renderer.render_groups(group_buffer);
   }
 
   if constexpr (namespaces_container<T>) {
-    auto namespaces = get_visible_view(registry.get_namespace_children_for(root));
-    std::vector<FwdRef<NamespaceEntity>> vec{std::ranges::begin(namespaces), std::ranges::end(namespaces)};
-    sort_by_name(vec);
-    print_md_section_link(sink, vec, "material-package");
+    get_visible_view(registry.get_namespace_children_for(root)) | assigner(namespace_buffer);
+    sort_by_name(namespace_buffer);
+    doc_renderer.render_ns(namespace_buffer);
   }
 
   if constexpr (std::same_as<T, RootEntity>) {
     if (coverage_directory) {
-      sink.println(":material-chart-pie: [Code Coverage]({}/)\n:    \n", *coverage_directory);
-    }
+      doc_renderer.print_coverage(*coverage_directory);    }
   }
 
   if constexpr (types_container<T>) {
-    auto types = get_visible_view(registry.get_type_children_for(root));
-    if (not sort_entities) {
-      print_md_table_file_link(sink, types, "Types");
-    } else {
-      std::vector<FwdRef<TypeEntity>> vec{std::ranges::begin(types), std::ranges::end(types)};
-      sort_by_name(vec);
-      print_md_table_file_link(sink, vec, "Types");
+    get_visible_view(registry.get_type_children_for(root)) | assigner(type_buffer);
+    if (sort_entities) {
+      sort_by_name(type_buffer);
     }
+    print_md_table_file_link(sink, type_buffer, "Types");
   }
 
-  vector_storage<typedefs_container<T>, FwdRef<TypedefEntity>> typedef_vec;
   if constexpr (typedefs_container<T>) {
-    typedef_vec = get_visible_view(registry.get_typedef_children_for(root));
-    if (sort_entities) { sort_by_name(*typedef_vec); }
-    print_md_table(sink, *typedef_vec, "Type Aliases");
+    get_visible_view(registry.get_typedef_children_for(root)) | assigner(typedef_buffer);
+    if (sort_entities) { sort_by_name(typedef_buffer); }
+    print_md_table(sink, typedef_buffer, "Type Aliases");
   }
 
-  vector_storage<concepts_container<T>, FwdRef<ConceptEntity>> concept_vec;
   if constexpr (concepts_container<T>) {
-    concept_vec = get_visible_view(registry.get_concept_children_for(root));
-    if (sort_entities) { sort_by_name(*concept_vec); }
-    print_md_table(sink, *concept_vec, "Concepts");
+    get_visible_view(registry.get_concept_children_for(root)) | assigner(concept_buffer);
+    if (sort_entities) { sort_by_name(concept_buffer); }
+    print_md_table(sink, concept_buffer, "Concepts");
   }
 
-  vector_storage<macros_container<T>, FwdRef<MacroEntity>> macro_vec;
   if constexpr (macros_container<T>) {
-    macro_vec = get_visible_view(registry.get_macro_children_for(root));
-    if (sort_entities) { sort_by_name(*macro_vec); }
-    print_md_table(sink, *macro_vec, "Macros");
+    get_visible_view(registry.get_macro_children_for(root)) | assigner(macro_buffer);
+    if (sort_entities) { sort_by_name(macro_buffer); }
+    print_md_table(sink, macro_buffer, "Macros");
   }
 
-  vector_storage<variables_container<T>, FwdRef<VariableEntity>> variable_vec;
   if constexpr (variables_container<T>) {
-    variable_vec = get_visible_view(registry.get_variable_children_for(root));
-    if (sort_entities) { sort_by_name(*variable_vec); }
-    print_md_table(sink, *variable_vec, "Variables");
+    get_visible_view(registry.get_variable_children_for(root)) | assigner(variable_buffer);
+    if (sort_entities) { sort_by_name(variable_buffer); }
+    print_md_table(sink, variable_buffer, "Variables");
   }
 
-  vector_storage<operators_container<T>, FwdRef<OperatorEntity>> operator_vec;
   if constexpr (operators_container<T>) {
-    operator_vec = get_visible_view(registry.get_operator_children_for(root));
-    if (sort_entities) { sort_by_name(*operator_vec); }
-    print_md_table(sink, *operator_vec, "Operators");
+    get_visible_view(registry.get_operator_children_for(root)) | assigner(operator_buffer);
+    if (sort_entities) { sort_by_name(operator_buffer); }
+    print_md_table(sink, operator_buffer, "Operators");
   }
 
-  vector_storage<variables_container<T>, FwdRef<FunctionEntity>> function_vec;
   if constexpr (functions_container<T>) {
-    function_vec = get_visible_view(registry.get_function_children_for(root));
-    if (sort_entities) { sort_by_name(*function_vec); }
-    print_md_table(sink, *function_vec, "Functions");
+    get_visible_view(registry.get_function_children_for(root)) | assigner(function_buffer);
+    if (sort_entities) { sort_by_name(function_buffer); }
+    print_md_table(sink, function_buffer, "Functions");
   }
 
   if constexpr (enums_container<T>) {
-    auto enums = get_visible_view(registry.get_enum_children_for(root));
-    if (not std::ranges::empty(enums)) {
-      for (const auto& e: enums) {
-        sink.println("**{}**\n:   {}\n", e->get_decl(), e->get_docs());
-      }
+    get_visible_view(registry.get_enum_children_for(root)) | assigner(enum_buffer);
+    if (not std::ranges::empty(enum_buffer)) {
+      doc_renderer.render_enums(enum_buffer);
     }
   }
 
   if constexpr (typedefs_container<T>) {
-    if (not std::ranges::empty(*typedef_vec)) {
-      if (not sort_entities) { sort_by_name(*typedef_vec); }
-      print_html_details(sink, *typedef_vec, "Type Alias", "typedef");
+    if (not std::ranges::empty(typedef_buffer)) {
+      if (not sort_entities) { sort_by_name(typedef_buffer); }
+      doc_renderer.render_details(typedef_buffer);
     }
   }
 
   if constexpr (concepts_container<T>) {
-    if (not std::ranges::empty(*concept_vec)) {
-      if (not sort_entities) { sort_by_name(*concept_vec); }
-      print_html_details(sink, *concept_vec, "Concept", "concept");
+    if (not std::ranges::empty(concept_buffer)) {
+      if (not sort_entities) { sort_by_name(concept_buffer); }
+      doc_renderer.render_details(concept_buffer);
     }
   }
 
   if constexpr (macros_container<T>) {
-    if (not std::ranges::empty(*macro_vec)) {
-      if (not sort_entities) { sort_by_name(*macro_vec); }
-      print_html_details(sink, *macro_vec, "Macros", "macro");
+    if (not std::ranges::empty(macro_buffer)) {
+      if (not sort_entities) { sort_by_name(macro_buffer); }
+      doc_renderer.render_details(macro_buffer);
     }
   }
 
   if constexpr (variables_container<T>) {
-    if (not std::ranges::empty(*variable_vec)) {
-      if (not sort_entities) { sort_by_name(*variable_vec); }
-      print_html_details(sink, *variable_vec, "Variable", "variable");
+    if (not std::ranges::empty(variable_buffer)) {
+      if (not sort_entities) { sort_by_name(variable_buffer); }
+      doc_renderer.render_details(variable_buffer);
     }
   }
 
   if constexpr (operators_container<T>) {
-    if (not std::ranges::empty(*operator_vec)) {
-      if (not sort_entities) { sort_by_name(*operator_vec); }
-      // cope with multiple declarations of an operator:
-      // move entities with the same name at the bottom and remove them
-      auto [first, last] = std::ranges::unique(*operator_vec, {}, name_getter);
-      operator_vec->erase(first, last);
-      print_html_details(sink, *operator_vec, "Operator", "operator");
+    if (not std::ranges::empty(operator_buffer)) {
+      if (not sort_entities) { sort_by_name(operator_buffer); }
+      doc_renderer.render_details(operator_buffer);
     }
   }
 
   if constexpr (functions_container<T>) {
-    if (not std::ranges::empty(*function_vec)) {
-      if (not sort_entities) { sort_by_name(*function_vec); }
-      auto [first, last] = std::ranges::unique(*function_vec, {}, name_getter);
-      function_vec->erase(first, last);
-      print_html_details(sink, *function_vec, "Function", "function");
+    if (not std::ranges::empty(function_buffer)) {
+      if (not sort_entities) { sort_by_name(function_buffer); }
+      doc_renderer.render_details(function_buffer);
     }
   }
+
+  group_buffer.clear();
+  type_buffer.clear();
+  function_buffer.clear();
+  variable_buffer.clear();
+  enum_buffer.clear();
+  namespace_buffer.clear();
+  typedef_buffer.clear();
+  concept_buffer.clear();
+  operator_buffer.clear();
+  macro_buffer.clear();
 }
 
 void MarkdownGenerator::render_entity(const EntityRegistry& registry, const std::filesystem::path& output, const RefVariant& root, const std::string_view& sanitized_name, const std::optional<std::string_view>& coverage_directory) {
@@ -308,7 +274,7 @@ void MarkdownGenerator::render_entity(const EntityRegistry& registry, const std:
   sink_t sink(out);
 
   std::visit([&]<typename T>(const FwdRef<T>& ref) {
-    render_entity_ref(sink, registry, ref, coverage_directory);
+    render_entity(sink, registry, ref, coverage_directory);
   }, root);
 }
 

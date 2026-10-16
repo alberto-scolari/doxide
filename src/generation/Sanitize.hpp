@@ -1,7 +1,10 @@
 #pragma once
 
-#include <entities/FwdRef.hpp>
 #include <Regex.hpp>
+#include <entities/FwdRef.hpp>
+#include <entities/Entities.hpp>
+#include <entities/Titled.hpp>
+
 
 #include <concepts>
 #include <regex>
@@ -29,3 +32,11 @@ template<std::derived_from<Documentable> T> std::string brief(const FwdRef<T>& e
 std::string htmlize(const std::string& str);
 
 std::string indent(const std::string& str);
+
+template<entity U> constexpr std::string_view get_title(const FwdRef<U>& e) {
+  if constexpr (std::derived_from<U, Titled>) {
+    return e->get_title();
+  } else {
+    return e->get_name();
+  }
+}

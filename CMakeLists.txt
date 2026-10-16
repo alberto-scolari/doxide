@@ -142,6 +142,7 @@ add_executable(doxide
   src/YAMLNode.cpp
   src/YAMLParser.cpp
   src/doc_parser/StyleParsers.cpp
+  src/generation/DocRenderers.cpp
   src/generation/MarkdownGenerator.cpp
   src/generation/MdCoverageGenerator.cpp
   src/generation/Sanitize.cpp

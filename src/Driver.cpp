@@ -1,16 +1,22 @@
 #include "Driver.hpp"
 
 #include "CppParser.hpp"
-#include "generation/Dfs_traversal.hpp"
+#include "FileSystemInfo.hpp"
 #include "GcovCounter.hpp"
 #include "JSONCounter.hpp"
 #include "JSONGenerator.hpp"
+#include "YAMLNode.hpp"
 #include "YAMLParser.hpp"
 #include "Log.hpp"
 #include "SourceWatcher.hpp"
 #include "Utils.hpp"
+#include "entities/FileEntity.hpp"
+#include "entities/FwdRef.hpp"
+#include "entities/LineStats.hpp"
+#include "generation/Dfs_traversal.hpp"
 #include "generation/MarkdownGenerator.hpp"
 #include "generation/MdCoverageGenerator.hpp"
+
 
 #include <glob/glob.hpp>
 
@@ -20,6 +26,7 @@
 #include <iostream>
 #include <memory>
 #include <regex>
+#include <stdexcept>
 #include <thread>
 #include <tuple>
 #include <utility>
@@ -478,7 +485,7 @@ std::optional<std::string_view> Driver::get_coverage_suffix() const {
 void Driver::run_generation() {
   auto coverage_path = get_coverage_path();
   auto coverage_suffix = get_coverage_suffix();
-  MarkdownGenerator generator(output, fscleaner);
+  MarkdownGenerator generator(output, fscleaner, style);
   generator.generate(*registry, coverage_suffix);
   if (coverage_path) {
     MdCoverageGenerator cov_gen(*coverage_path, fscleaner);

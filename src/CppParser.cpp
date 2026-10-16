@@ -5,10 +5,12 @@
 #include "TextLineCursor.hpp"
 #include "CppQueries.hpp"
 #include "Regex.hpp"
-#include "entities/CodeEntity.hpp"
-#include "entities/EntityRegistry.hpp"
-#include "entities/FileEntity.hpp"
-#include "entities/RefVariant.hpp"
+#include "Utils.hpp"
+#include <doc_parser/StyleParsers.hpp>
+#include <entities/CodeEntity.hpp>
+#include <entities/EntityRegistry.hpp>
+#include <entities/FileEntity.hpp>
+#include <entities/RefVariant.hpp>
 
 #include <algorithm>
 #include <cctype>

@@ -25,6 +25,8 @@ public:
     return _it;
   }
 
+  iter_t& iter() { return _it; }
+
 private:
   iter_t _it;
 };

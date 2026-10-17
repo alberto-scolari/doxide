@@ -7,11 +7,13 @@
 #include "JSONGenerator.hpp"
 #include "YAMLParser.hpp"
 #include "Log.hpp"
-#include "MarkdownGenerator.hpp"
 #include "SourceWatcher.hpp"
 #include "Utils.hpp"
+#include "generation/MarkdownGenerator.hpp"
+#include "generation/MdCoverageGenerator.hpp"
 
 #include <glob/glob.hpp>
+
 #include <chrono>
 #include <format>
 #include <functional>
@@ -185,7 +187,8 @@ R""""(<div class="md-copyright">
 Driver::Driver() :
     style("mkdocs"),
     title("Untitled"),
-    output("docs") {
+    output("docs"),
+    fscleaner(output) {
   //
 }
 
@@ -217,10 +220,7 @@ void Driver::build() {
   parse();
   count();
   // fsinfo.explore();
-
-  MarkdownGenerator generator(output);
-  generator.generate(*registry, fsinfo, !coverage.empty());
-  generator.clean();
+  run_generation();
 }
 
 void Driver::watch() {
@@ -284,9 +284,7 @@ void Driver::watch() {
 
       count();
 
-      MarkdownGenerator generator(output);
-      generator.generate(*registry, fsinfo, !coverage.empty());
-      generator.clean();
+      run_generation();
 
       std::cout << "Done" << std::endl;
     }
@@ -302,12 +300,10 @@ void Driver::cover() {
 }
 
 void Driver::clean() {
-
   /* can use MarkdownGenerator::clean() for this just by not calling
    * generate() first; this will remove all files with `generator: doxide` in
    * their YAML frontmatter */
-  MarkdownGenerator generator(output);
-  generator.clean();
+  run_generation();
 }
 
 void Driver::config() {
@@ -463,6 +459,32 @@ void Driver::aggregate_stats() {
       dirinfo.stats += fsinfo.lookup_dir(sd)->get().stats;
     }
   }
+}
+
+std::optional<std::filesystem::path> Driver::get_coverage_path() const {
+  if (not coverage.empty()) {
+    return output / "coverage";
+  }
+  return {};
+}
+
+std::optional<std::string_view> Driver::get_coverage_suffix() const {
+  if (not coverage.empty()) {
+    return "coverage";
+  }
+  return {};
+}
+
+void Driver::run_generation() {
+  auto coverage_path = get_coverage_path();
+  auto coverage_suffix = get_coverage_suffix();
+  MarkdownGenerator generator(output, fscleaner);
+  generator.generate(*registry, coverage_suffix);
+  if (coverage_path) {
+    MdCoverageGenerator cov_gen(*coverage_path, fscleaner);
+    cov_gen.generate(fsinfo);
+  }
+  fscleaner.clean();
 }
 
 void Driver::groups(YAMLNode& parentNode, Entity& parentEntity) {

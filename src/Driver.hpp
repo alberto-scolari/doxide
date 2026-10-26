@@ -103,6 +103,8 @@ private:
 
   void run_generation();
 
+  void remove_file(const std::filesystem::path filename);
+
   /**
    * Recursively read groups from the configuration file.
    */

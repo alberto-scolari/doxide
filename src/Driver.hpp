@@ -3,6 +3,7 @@
 #include "Entity.hpp"
 #include "entities/EntityRegistry.hpp"
 #include "FileSystemInfo.hpp"
+#include "FSCleaner.hpp"
 
 #include <filesystem>
 #include <list>
@@ -80,6 +81,8 @@ public:
    */
   std::filesystem::path output;
 
+  FSCleaner fscleaner;
+
 private:
   /**
    * Parse files.
@@ -92,6 +95,12 @@ private:
   void count();
 
   void aggregate_stats();
+
+  std::optional<std::filesystem::path> get_coverage_path() const;
+
+  std::optional<std::string_view> get_coverage_suffix() const;
+
+  void run_generation();
 
   /**
    * Recursively read groups from the configuration file.

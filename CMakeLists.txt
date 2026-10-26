@@ -131,17 +131,19 @@ add_executable(doxide
   src/DocTokenizer.cpp
   src/Driver.cpp
   src/Entity.cpp
+  src/FSCleaner.cpp
   src/GcovCounter.cpp
   src/JSONCounter.cpp
   src/JSONGenerator.cpp
   src/FileSystemInfo.cpp
-  src/MarkdownGenerator.cpp
   src/SourceWatcher.cpp
   src/TextLineCursor.cpp
   src/Utils.cpp
   src/YAMLNode.cpp
   src/YAMLParser.cpp
   src/doc_parser/StyleParsers.cpp
+  src/generation/MarkdownGenerator.cpp
+  src/generation/MdCoverageGenerator.cpp
   src/generation/Sanitize.cpp
 )
 if(WIN32)

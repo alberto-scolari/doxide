@@ -13,7 +13,6 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
@@ -32,7 +31,7 @@ public:
 
   struct DirInfo {
     std::unordered_set<std::string_view> subdirs;
-    std::vector<FwdRef<FileEntity>> files;
+    std::unordered_set<FwdRef<FileEntity>> files;
     LineStats stats;
 
     DirInfo() = default;
@@ -55,6 +54,13 @@ public:
 
   bool contains(const std::filesystem::path& p) const {
     return files_map.contains(p.native());
+  }
+
+  void remove_file(const std::filesystem::path& filepath);
+
+  void remove_all_files() {
+    dir_info_map.clear();
+    files_map.clear();
   }
 
 private:

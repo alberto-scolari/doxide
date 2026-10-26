@@ -1,9 +1,10 @@
 #pragma once
 
-#include "DocToken.hpp"
 #include "TextLineCursor.hpp"
 
 #include <string>
+#include <string_view>
+#include <utility>
 
 /**
  * Documentation of an entity.
@@ -18,8 +19,22 @@ struct Doc {
    * @param init_indent Initial indent level.
    * @param style Markdown style.
    */
-  Doc(const TextLineCursor &comment, const int init_indent,
-      const std::string& style);
+  explicit constexpr Doc(const std::string_view _docs): docs(_docs), hide(false) {}
+
+  constexpr Doc(std::string&& _docs, TextLineCursor&& _ingroup, bool _hide):
+    docs(std::move(_docs)), ingroup(std::move(_ingroup)), hide(_hide) {}
+
+  constexpr Doc(const Doc&) = default;
+
+  constexpr Doc(Doc&&) = default;
+
+  constexpr Doc(): hide(false) {}
+
+  constexpr Doc& operator=(const Doc&) = delete;
+
+  constexpr Doc& operator=(Doc&&) = default;
+
+  constexpr void drop_group() { ingroup = TextLineCursor(); }
 
   /**
    * Add an indent to the docs in the given style.
@@ -27,7 +42,7 @@ struct Doc {
    * @param indent Indentation level.
    * @param style Markdown style.
    */
-  void add_indent(const int indent, const std::string& style);
+  // void add_indent(const int indent, const std::string& style);
 
   /**
    * Content of the documentation.
@@ -39,19 +54,6 @@ struct Doc {
    * documentation comment.
    */
   TextLineCursor ingroup;
-
-  /**
-   * Opening token, used to determine the type of comment.
-   */
-  DocToken open;
-
-  /**
-   * Current indent level of the documentation comment for this entity. This
-   * is used for tracking indenting across multiple end-of-line comments, for
-   * example following a @@note command, each following line should be
-   * indented until the end of the paragraph.
-   */
-  int indent;
 
   /**
    * Hide the associated entity?

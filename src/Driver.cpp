@@ -8,7 +8,7 @@
 #include "Log.hpp"
 #include "MarkdownGenerator.hpp"
 #include "SourceWatcher.hpp"
-#include "doxide.hpp"
+#include "Utils.hpp"
 
 #include <glob/glob.hpp>
 #include <regex>
@@ -211,8 +211,9 @@ void Driver::build() {
   parse();
   count();
 
-  MarkdownGenerator generator(output, style);
-  generator.generate(root, !coverage.empty());
+  MarkdownGenerator generator(output);
+  // TODO: fix
+  // generator.generate(*registry, !coverage.empty());
   generator.clean();
 }
 
@@ -224,7 +225,7 @@ void Driver::watch() {
   SourceWatcher config_watcher = SourceWatcher(config_file.string());
   SourceWatcher watcher = SourceWatcher(files_patterns);
 
-  CppParser parser;
+  CppParser parser(style);
 
   for (;;){
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
@@ -269,16 +270,17 @@ void Driver::watch() {
       }
 
       for (const auto& filename: changed_files) {
-        parser.parse(filename, style, defines, root);
+        parser.parse(*registry, filename, defines);
       }
       for (const auto& filename: added_files) {
-        parser.parse(filename, style, defines, root);
+        parser.parse(*registry, filename, defines);
       }
 
       count();
 
-      MarkdownGenerator generator(output, style);
-      generator.generate(root, !coverage.empty());
+      MarkdownGenerator generator(output);
+      // TODO: fix
+      // generator.generate(*registry, !coverage.empty());
       generator.clean();
 
       std::cout << "Done" << std::endl;
@@ -299,7 +301,7 @@ void Driver::clean() {
   /* can use MarkdownGenerator::clean() for this just by not calling
    * generate() first; this will remove all files with `generator: doxide` in
    * their YAML frontmatter */
-  MarkdownGenerator generator(output, style);
+  MarkdownGenerator generator(output);
   generator.clean();
 }
 
@@ -401,12 +403,17 @@ void Driver::config() {
   groups(yaml, root);
   root.title = title;
   root.docs = description;
+
+  registry.emplace(title, description);
+  for (const auto& g: root.groups) {
+    registry->add_group(g.name, g.title, g.docs);
+  }
 }
 
 void Driver::parse() {
-  CppParser parser;
+  CppParser parser(style);
   for (const auto& filename: filenames) {
-    parser.parse(filename, style, defines, root);
+    parser.parse(*registry, filename, defines);
   }
 }
 

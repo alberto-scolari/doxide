@@ -226,7 +226,6 @@ void Driver::init() {
 void Driver::build() {
   parse();
   count();
-  // fsinfo.explore();
   run_generation();
 }
 
@@ -248,6 +247,8 @@ void Driver::watch() {
       std::cout << "Rebuilding documentation..." << std::endl;
 
       root.clear();
+      fscleaner.remove_all_files();
+      fsinfo.remove_all_files();
       build();
 
       config_watcher = SourceWatcher(config_file.string());
@@ -276,10 +277,10 @@ void Driver::watch() {
       filenames = watcher.filenames();
 
       for (const auto& filename: deleted_files) {
-        root.delete_by_predicate([filename](const Entity& e) {return e.path == filename; });
+        remove_file(filename);
       }
       for (const auto& filename: changed_files) {
-        root.delete_by_predicate([filename](const Entity& e) {return e.path == filename; });
+        remove_file(filename);
       }
 
       for (const auto& filename: changed_files) {
@@ -303,7 +304,7 @@ void Driver::cover() {
   count();
 
   JSONGenerator generator;
-  generator.generate(root);
+  generator.generate(fsinfo);
 }
 
 void Driver::clean() {
@@ -492,6 +493,11 @@ void Driver::run_generation() {
     cov_gen.generate(fsinfo);
   }
   fscleaner.clean();
+}
+
+void Driver::remove_file(const std::filesystem::path filename) {
+  fsinfo.remove_file(filename);
+  registry->remove_file(filename);
 }
 
 void Driver::groups(YAMLNode& parentNode, Entity& parentEntity) {

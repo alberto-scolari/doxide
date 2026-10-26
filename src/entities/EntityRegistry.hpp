@@ -26,13 +26,17 @@
 #include <string_view>
 #include <stdexcept>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
+
+#include <iostream>
 
 class EntityRegistry {
 
   template<entity T> class entities_storage {
   public:
-    using storage_t = std::list<std::vector<FwdRef<T>>>;
+    using value_t = FwdRef<T>;
+    using storage_t = std::list<std::vector<value_t>>;
     using sequence_ref = storage_t::reference;
     using sequence_iter = storage_t::iterator;
     using const_view_t = std::remove_cvref_t<decltype(std::declval<const storage_t&>() | std::views::join)>;
@@ -42,20 +46,24 @@ class EntityRegistry {
 
     sequence_iter back_iter() {
       if (data.empty()) {
-        push_back_sequence();
+        _push_back_sequence();
       }
       return _back_iter();
     }
 
     sequence_iter back_new_iter() {
       if (data.empty() or not data.back().empty()) {
-        push_back_sequence();
+        _push_back_sequence();
       }
       return _back_iter();
     }
 
     const_view_t get_view() const {
       return data | std::views::join;
+    }
+
+    void erase_sequence(sequence_iter& it) {
+      data.erase(it);
     }
 
     static inline const_view_t get_empty_view() {
@@ -65,8 +73,8 @@ class EntityRegistry {
   private:
     inline static const storage_t EMPTY;
 
-    void push_back_sequence() {
-      data.push_back(std::vector<FwdRef<T>>());
+    void _push_back_sequence() {
+      data.push_back(std::vector<value_t>());
     }
 
     sequence_iter _back_iter() {
@@ -76,90 +84,114 @@ class EntityRegistry {
     storage_t data;
   };
 
+  template <template <typename> typename T> struct entity_content {
+    T<TypeEntity> types;
+    T<FunctionEntity> functions;
+    T<VariableEntity> variables;
+    T<EnumEntity> enums;
+    T<NamespaceEntity> namespaces;
+    T<TypedefEntity> typedefs;
+    T<ConceptEntity> concepts;
+    T<OperatorEntity> operators;
+    T<MacroEntity> macros;
+
+    template<entity U> auto& get_for() {
+      if constexpr (std::same_as<U, TypeEntity>) {
+        return types;
+      } else if constexpr (std::same_as<U, FunctionEntity>) {
+        return functions;
+      } else if constexpr (std::same_as<U, VariableEntity>) {
+        return variables;
+      } else if constexpr (std::same_as<U, EnumEntity>) {
+        return enums;
+      } else if constexpr (std::same_as<U, NamespaceEntity>) {
+        return namespaces;
+      } else if constexpr (std::same_as<U, TypedefEntity>) {
+        return typedefs;
+      } else if constexpr (std::same_as<U, ConceptEntity>) {
+        return concepts;
+      } else if constexpr (std::same_as<U, OperatorEntity>) {
+        return operators;
+      } else /*if constexpr (std::same_as<ChildT, MacroEntity>)*/ {
+        static_assert(std::same_as<U, MacroEntity>);
+        return macros;
+      }
+    }
+
+    template<entity U> const auto& get_for() const {
+      if constexpr (std::same_as<U, TypeEntity>) {
+        return types;
+      } else if constexpr (std::same_as<U, FunctionEntity>) {
+        return functions;
+      } else if constexpr (std::same_as<U, VariableEntity>) {
+        return variables;
+      } else if constexpr (std::same_as<U, EnumEntity>) {
+        return enums;
+      } else if constexpr (std::same_as<U, NamespaceEntity>) {
+        return namespaces;
+      } else if constexpr (std::same_as<U, TypedefEntity>) {
+        return typedefs;
+      } else if constexpr (std::same_as<U, ConceptEntity>) {
+        return concepts;
+      } else if constexpr (std::same_as<U, OperatorEntity>) {
+        return operators;
+      } else /*if constexpr (std::same_as<ChildT, MacroEntity>)*/ {
+        static_assert(std::same_as<U, MacroEntity>);
+        return macros;
+      }
+    }
+  };
+
+  struct file_catalog_t {
+    // sequence whose source in code_edges is the root and whose destinations were parsed in file
+    template<typename T> using root_ref_t = std::optional<typename entities_storage<T>::sequence_iter>;
+    // all parsed groups and the related destination sequence within code_edges
+    template<typename T> using group_ref_t = std::unordered_map<FwdRef<GroupEntity>, typename entities_storage<T>::sequence_iter>;
+    // all entities that are source in code_edges and are **not** root nor a group:
+    // for each source s, the edge <s, [destinations from s]> can be removed entirely from code_edges
+    template<typename T> using sources_ref_t = std::unordered_set<FwdHashable>;
+    // all entities parsed in file (either source or destination):
+    // they must be "vacuumed" from code_entities at the end of file removal
+    template<typename T> using entities_ref_t = std::vector<FwdRef<T>>;
+
+    entity_content<root_ref_t> root_sequence;
+    entity_content<group_ref_t> groups_sequence;
+    entity_content<sources_ref_t> sources;
+    entity_content<entities_ref_t> destinations;
+
+    file_catalog_t() = default;
+
+    file_catalog_t(const file_catalog_t&) = delete;
+
+    file_catalog_t& operator=(const file_catalog_t& other) = delete;
+  };
+
 public:
 
   template<entity T> using edges_map_t = std::unordered_map<FwdHashable, entities_storage<T>>;
   template<entity T> using children_view_t = entities_storage<T>::const_view_t;
 
 private:
-  template<entity ChildT> FwdList<ChildT>& _get_node_list() {
-    if constexpr (std::same_as< ChildT, TypeEntity>) {
-      return type_entities;
-    } else if constexpr (std::same_as< ChildT, FunctionEntity>) {
-      return function_entities;
-    } else if constexpr (std::same_as< ChildT, VariableEntity>) {
-      return variable_entities;
-    } else if constexpr (std::same_as< ChildT, EnumEntity>) {
-      return enum_entities;
-    } else if constexpr (std::same_as< ChildT, NamespaceEntity>) {
-      return namespace_entities;
-    } else if constexpr (std::same_as< ChildT, TypedefEntity>) {
-      return typedef_entities;
-    } else if constexpr (std::same_as< ChildT, ConceptEntity>) {
-      return concept_entities;
-    } else if constexpr (std::same_as< ChildT, OperatorEntity>) {
-      return operator_entities;
-    } else /*if constexpr (std::same_as<ChildT, MacroEntity>)*/ {
-      static_assert(std::same_as< ChildT, MacroEntity>);
-      return macro_entities;
-    }
-  }
-
-  template<entity ChildT> edges_map_t<ChildT>& _get_edge_list() {
-    if constexpr (std::same_as<ChildT, TypeEntity>) {
-      return type_edges;
-    } else if constexpr (std::same_as<ChildT, FunctionEntity>) {
-      return function_edges;
-    } else if constexpr (std::same_as<ChildT, VariableEntity>) {
-      return variable_edges;
-    } else if constexpr (std::same_as<ChildT, EnumEntity>) {
-      return enum_edges;
-    } else if constexpr (std::same_as<ChildT, NamespaceEntity>) {
-      return namespace_edges;
-    } else if constexpr (std::same_as<ChildT, TypedefEntity>) {
-      return typedef_edges;
-    } else if constexpr (std::same_as<ChildT, ConceptEntity>) {
-      return concept_edges;
-    } else if constexpr (std::same_as<ChildT, OperatorEntity>) {
-      return operator_edges;
-    } else /*if constexpr (std::same_as<ChildT, MacroEntity>)*/ {
-      static_assert(std::same_as<ChildT, MacroEntity>);
-      return macro_edges;
-    }
-  }
-
-  template<entity ChildT> const edges_map_t<ChildT>& _get_edge_list() const {
-    if constexpr (std::same_as<ChildT, TypeEntity>) {
-      return type_edges;
-    } else if constexpr (std::same_as<ChildT, FunctionEntity>) {
-      return function_edges;
-    } else if constexpr (std::same_as<ChildT, VariableEntity>) {
-      return variable_edges;
-    } else if constexpr (std::same_as<ChildT, EnumEntity>) {
-      return enum_edges;
-    } else if constexpr (std::same_as<ChildT, NamespaceEntity>) {
-      return namespace_edges;
-    } else if constexpr (std::same_as<ChildT, TypedefEntity>) {
-      return typedef_edges;
-    } else if constexpr (std::same_as<ChildT, ConceptEntity>) {
-      return concept_edges;
-    } else if constexpr (std::same_as<ChildT, OperatorEntity>) {
-      return operator_edges;
-    } else /*if constexpr (std::same_as<ChildT, MacroEntity>)*/ {
-      static_assert(std::same_as<ChildT, MacroEntity>);
-      return macro_edges;
-    }
-  }
 
   template<entity ParentT, entity ChildT> requires container_of<ParentT, ChildT>
   children_view_t<ChildT> _get_children_view(const FwdRef<ParentT>& e) const {
-    const edges_map_t<ChildT>& edges = _get_edge_list<ChildT>();
-    auto it = edges.find(e);
-    return it != edges.cend() ? it->second.get_view() : entities_storage<ChildT>::get_empty_view();
+    const edges_map_t<ChildT>& _edges = code_edges.get_for<ChildT>();
+    auto it = _edges.find(e);
+    return it != _edges.cend() ? it->second.get_view() : entities_storage<ChildT>::get_empty_view();
+  }
+
+  template<entity T> children_view_t<T> _get_children_for(const RefVariant& parent) const {
+    return std::visit([this]<entity ParentT>(const FwdRef<ParentT>& p) -> children_view_t<T> {
+      if constexpr (not container_of<ParentT, T>) {
+        throw std::logic_error(std::format("Entities of type {} have no children of type {}",
+          entity_name<ParentT>(), entity_name<T>()));
+      } else {
+        return this->_get_children_view<ParentT, T>(p);
+      }
+    }, parent);
   }
 
 public:
-
 
   EntityRegistry() = delete;
 
@@ -188,144 +220,197 @@ public:
     return res;
   }
 
+  template<entity ChildT, entity ParentT> void remove_edges_sequence(const FwdRef<ParentT>& e,
+    typename entities_storage<ChildT>::sequence_iter& sit) {
+    auto& _edges = code_edges.get_for<ChildT>();
+    auto it = _edges.find(e);
+    if (it == _edges.end()) {
+      throw std::runtime_error(std::format("no edge sequence \"{}\" of type \"{}\"", e->get_name(), entity_name(e)));
+    }
+    it->second.erase_sequence(sit);
+  }
+
+  template<entity T> void remove_file_root_edges(file_catalog_t& cat) {
+    auto& rs = cat.root_sequence.get_for<T>();
+    if (not rs) {
+      return;
+    }
+    remove_edges_sequence<T>(*root.begin(), *rs);
+    rs.reset();
+  }
+
+  template<entity T> void remove_file_group_edges(file_catalog_t& cat) {
+    auto& groups = cat.groups_sequence.get_for<T>();
+    for(auto& [group, group_sit]: groups) {
+      remove_edges_sequence<T>(group, group_sit);
+    }
+    groups.clear();
+  }
+
+  template<entity T> void remove_file_sources(file_catalog_t& cat) {
+    auto& _edges = code_edges.get_for<T>();
+    auto& sources = cat.sources.get_for<T>();
+    for(const auto& e: sources) {
+      _edges.erase(e);
+    }
+    sources.clear();
+  }
+
+  template<entity T> void remove_file_catalog(file_catalog_t& cat) {
+    auto& destinations = cat.destinations.get_for<T>();
+    auto& entities = code_entities.get_for<T>();
+    for(const auto& e: destinations) {
+      entities.erase(e);
+    }
+    destinations.clear();
+  }
+
   class EntityFileInserter {
-      template<entity ParentT, entity ChildT> requires container_of<ParentT, ChildT>
-      FwdRef<ChildT> _add_child_to_parent(const FwdRef<ParentT>& parent, auto&&... args) {
-        FwdRef<ChildT> result = static_cast<FwdRef<ChildT>>(
-          registry._get_node_list<ChildT>().emplace_back(std::forward<decltype(args)>(args)...));
-        _add_to_parent(parent, result);
-        return result;
-      }
+    template<entity ParentT, entity ChildT> requires container_of<ParentT, ChildT>
+    FwdRef<ChildT> _add_child_to_parent(const FwdRef<ParentT>& parent, auto&&... args) {
+      FwdRef<ChildT> result = static_cast<FwdRef<ChildT>>(
+        registry.code_entities.get_for<ChildT>().emplace_back(std::forward<decltype(args)>(args)...));
+      _add_to_parent(parent, result);
+      return result;
+    }
 
-      template<entity ParentT, entity ChildT> requires container_of<ParentT, ChildT>
-      void _add_to_parent(const FwdRef<ParentT>& parent, FwdRef<ChildT>& child) {
-        std::optional<typename entities_storage<ChildT>::sequence_iter> iter_ref;
-        if constexpr (std::same_as<ParentT, RootEntity>) {
-          auto& seq_opt = registry.name_root_map[file].get_entity_opt<ChildT>();
-          if (not seq_opt) {
-            // if it doesn't exist, generate one
-            seq_opt = registry._get_edge_list<ChildT>()[parent].back_new_iter();
-          }
-          iter_ref = *seq_opt;
-        } else if constexpr (std::same_as<ParentT, GroupEntity>) {
-          auto& seq_opt = registry.filename_group_catalogs_map[file][parent->get_name()].template get_entity_opt<ChildT>();
-          if (not seq_opt) {
-            seq_opt = registry._get_edge_list<ChildT>()[parent].back_new_iter();
-          }
-          iter_ref = *seq_opt;
-        } else {
-          iter_ref = registry._get_edge_list<ChildT>()[parent].back_iter();
+    template<entity ParentT, entity ChildT> requires container_of<ParentT, ChildT>
+    void _add_to_parent(const FwdRef<ParentT>& parent, FwdRef<ChildT>& child) {
+      if (not catalog) {
+        catalog = std::ref(registry.catalog[file]);
+      }
+      EntityRegistry::file_catalog_t& cat = catalog.value().get();
+      if constexpr (std::same_as<ParentT, RootEntity>) {
+        auto& root_refs = cat.root_sequence.get_for<ChildT>();
+        if (not root_refs) {
+          root_refs = registry.code_edges.get_for<ChildT>()[parent].back_new_iter();
         }
-        iter_ref.value()->push_back(child);
+        (*root_refs)->push_back(child);
+      } else if constexpr (std::same_as<ParentT, GroupEntity>) {
+        auto& group_refs = cat.groups_sequence.get_for<ChildT>();
+        auto ref_it = group_refs.find(parent);
+        if (ref_it == group_refs.end()) {
+          auto iter = registry.code_edges.get_for<ChildT>()[parent].back_new_iter();
+          auto [it, _] = group_refs.try_emplace(parent, iter);
+          ref_it = it;
+        }
+        ref_it->second->push_back(child);
+      } else {
+        // get source per child type: the same parent can thus appear as father
+        // of children of multiple types
+        cat.sources.get_for<ChildT>().insert(parent);
       }
+      cat.destinations.get_for<ChildT>().push_back(child);
+    }
 
-      template<entity ChildT>
-      FwdRef<ChildT> _add_child_to_parent_ref(const RefVariant& parent, auto&&... args) {
-        FwdRef<ChildT> result = static_cast<FwdRef<ChildT>>(
-          registry._get_node_list<ChildT>().emplace_back(std::forward<decltype(args)>(args)...));
-        std::visit([this, &result]<entity ParentT>(const FwdRef<ParentT>& p) {
-          if constexpr (not container_of<ParentT, ChildT>) {
-            registry._get_node_list<ChildT>().erase(result);
-            throw std::runtime_error(std::format("Cannot insert {} into {}", entity_name<ChildT>(), entity_name<ParentT>()));
-          } else {
-            this->_add_to_parent(p, result);
-          }
-        }, parent);
-        return result;
-      }
+    template<entity ChildT>
+    FwdRef<ChildT> _add_child_to_parent_ref(const RefVariant& parent, auto&&... args) {
+      FwdRef<ChildT> result = static_cast<FwdRef<ChildT>>(
+        registry.code_entities.get_for<ChildT>().emplace_back(std::forward<decltype(args)>(args)...));
+      std::visit([this, &result]<entity ParentT>(const FwdRef<ParentT>& p) {
+        if constexpr (not container_of<ParentT, ChildT>) {
+          registry.code_entities.get_for<ChildT>().erase(result);
+          throw std::runtime_error(std::format("Cannot insert {} into {}", entity_name<ChildT>(), entity_name<ParentT>()));
+        } else {
+          this->_add_to_parent(p, result);
+        }
+      }, parent);
+      return result;
+    }
 
-      public:
-        EntityFileInserter(std::string_view f, EntityRegistry& r): file(f), registry(r) {}
+  public:
+    EntityFileInserter(std::string_view f, EntityRegistry& r): file(f), registry(r) {}
 
-        EntityFileInserter(EntityFileInserter&& other): file(other.file), registry(other.registry) {}
+    EntityFileInserter(const EntityFileInserter& other) = delete;
 
-      template<entity ParentT> requires container_of<ParentT, TypeEntity>
-      FwdRef<TypeEntity> add_type(const FwdRef<ParentT>& parent, auto&&... args) {
-        return _add_child_to_parent<ParentT, TypeEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
+    EntityFileInserter& operator=(const EntityFileInserter& other) = delete;
 
-      FwdRef<TypeEntity> add_type(const RefVariant& parent, auto&&... args) {
-        return _add_child_to_parent_ref<TypeEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
+    template<entity ParentT> requires container_of<ParentT, TypeEntity>
+    FwdRef<TypeEntity> add_type(const FwdRef<ParentT>& parent, auto&&... args) {
+      return _add_child_to_parent<ParentT, TypeEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
+
+    FwdRef<TypeEntity> add_type(const RefVariant& parent, auto&&... args) {
+      return _add_child_to_parent_ref<TypeEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
+
+    template<entity ParentT> requires container_of<ParentT, FunctionEntity>
+    FwdRef<FunctionEntity> add_function(const FwdRef<ParentT>& parent, auto&&... args) {
+      return _add_child_to_parent<ParentT, FunctionEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
+
+    FwdRef<FunctionEntity> add_function(const RefVariant& parent, auto&&... args) {
+      return _add_child_to_parent_ref<FunctionEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
+
+    template<entity ParentT> requires container_of<ParentT, VariableEntity>
+    FwdRef<VariableEntity> add_variable(const FwdRef<ParentT>& parent, auto&&... args) {
+      return _add_child_to_parent<ParentT, VariableEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
+
+    FwdRef<VariableEntity> add_variable(const RefVariant& parent, auto&&... args) {
+      return _add_child_to_parent_ref<VariableEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
+
+    template<entity ParentT> requires container_of<ParentT, EnumEntity>
+    FwdRef<EnumEntity> add_enum(const FwdRef<ParentT>& parent, auto&&... args) {
+      return _add_child_to_parent<ParentT, EnumEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
+
+    FwdRef<EnumEntity> add_enum(const RefVariant& parent, auto&&... args) {
+      return _add_child_to_parent_ref<EnumEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
+
+    template<entity ParentT> requires container_of<ParentT, NamespaceEntity>
+    FwdRef<NamespaceEntity> add_namespace(const FwdRef<ParentT>& parent, auto&&... args) {
+      return _add_child_to_parent<ParentT, NamespaceEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
+
+    FwdRef<NamespaceEntity> add_namespace(const RefVariant& parent, auto&&... args) {
+      return _add_child_to_parent_ref<NamespaceEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
+
+    template<entity ParentT> requires container_of<ParentT, TypedefEntity>
+    FwdRef<TypedefEntity> add_typedef(const FwdRef<ParentT>& parent, auto&&... args) {
+      return _add_child_to_parent<ParentT, TypedefEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
+
+    FwdRef<TypedefEntity> add_typedef(const RefVariant& parent, auto&&... args) {
+      return _add_child_to_parent_ref<TypedefEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
 
 
-      template<entity ParentT> requires container_of<ParentT, FunctionEntity>
-      FwdRef<FunctionEntity> add_function(const FwdRef<ParentT>& parent, auto&&... args) {
-        return _add_child_to_parent<ParentT, FunctionEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
+    template<entity ParentT> requires container_of<ParentT, ConceptEntity>
+    FwdRef<ConceptEntity> add_concept(const FwdRef<ParentT>& parent, auto&&... args) {
+      return _add_child_to_parent<ParentT, ConceptEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
 
-      FwdRef<FunctionEntity> add_function(const RefVariant& parent, auto&&... args) {
-        return _add_child_to_parent_ref<FunctionEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
+    FwdRef<ConceptEntity> add_concept(const RefVariant& parent, auto&&... args) {
+      return _add_child_to_parent_ref<ConceptEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
 
+    template<entity ParentT> requires container_of<ParentT, OperatorEntity>
+    FwdRef<OperatorEntity> add_operator(const FwdRef<ParentT>& parent, auto&&... args) {
+      return _add_child_to_parent<ParentT, OperatorEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
 
-      template<entity ParentT> requires container_of<ParentT, VariableEntity>
-      FwdRef<VariableEntity> add_variable(const FwdRef<ParentT>& parent, auto&&... args) {
-        return _add_child_to_parent<ParentT, VariableEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
+    FwdRef<OperatorEntity> add_operator(const RefVariant& parent, auto&&... args) {
+      return _add_child_to_parent_ref<OperatorEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
 
-      FwdRef<VariableEntity> add_variable(const RefVariant& parent, auto&&... args) {
-        return _add_child_to_parent_ref<VariableEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
+    template<entity ParentT> requires container_of<ParentT, MacroEntity>
+    FwdRef<MacroEntity> add_macro(const FwdRef<ParentT>& parent, auto&&... args) {
+      return _add_child_to_parent<ParentT, MacroEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
 
-      template<entity ParentT> requires container_of<ParentT, EnumEntity>
-      FwdRef<EnumEntity> add_enum(const FwdRef<ParentT>& parent, auto&&... args) {
-        return _add_child_to_parent<ParentT, EnumEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
+    FwdRef<MacroEntity> add_macro(const RefVariant& parent, auto&&... args) {
+      return _add_child_to_parent_ref<MacroEntity>(parent, std::forward<decltype(args)>(args)...);
+    }
 
-      FwdRef<EnumEntity> add_enum(const RefVariant& parent, auto&&... args) {
-        return _add_child_to_parent_ref<EnumEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
-
-      template<entity ParentT> requires container_of<ParentT, NamespaceEntity>
-      FwdRef<NamespaceEntity> add_namespace(const FwdRef<ParentT>& parent, auto&&... args) {
-        return _add_child_to_parent<ParentT, NamespaceEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
-
-      FwdRef<NamespaceEntity> add_namespace(const RefVariant& parent, auto&&... args) {
-        return _add_child_to_parent_ref<NamespaceEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
-
-      template<entity ParentT> requires container_of<ParentT, TypedefEntity>
-      FwdRef<TypedefEntity> add_typedef(const FwdRef<ParentT>& parent, auto&&... args) {
-        return _add_child_to_parent<ParentT, TypedefEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
-
-      FwdRef<TypedefEntity> add_typedef(const RefVariant& parent, auto&&... args) {
-        return _add_child_to_parent_ref<TypedefEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
-
-
-      template<entity ParentT> requires container_of<ParentT, ConceptEntity>
-      FwdRef<ConceptEntity> add_concept(const FwdRef<ParentT>& parent, auto&&... args) {
-        return _add_child_to_parent<ParentT, ConceptEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
-
-      FwdRef<ConceptEntity> add_concept(const RefVariant& parent, auto&&... args) {
-        return _add_child_to_parent_ref<ConceptEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
-
-      template<entity ParentT> requires container_of<ParentT, OperatorEntity>
-      FwdRef<OperatorEntity> add_operator(const FwdRef<ParentT>& parent, auto&&... args) {
-        return _add_child_to_parent<ParentT, OperatorEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
-
-      FwdRef<OperatorEntity> add_operator(const RefVariant& parent, auto&&... args) {
-        return _add_child_to_parent_ref<OperatorEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
-
-      template<entity ParentT> requires container_of<ParentT, MacroEntity>
-      FwdRef<MacroEntity> add_macro(const FwdRef<ParentT>& parent, auto&&... args) {
-        return _add_child_to_parent<ParentT, MacroEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
-
-      FwdRef<MacroEntity> add_macro(const RefVariant& parent, auto&&... args) {
-        return _add_child_to_parent_ref<MacroEntity>(parent, std::forward<decltype(args)>(args)...);
-      }
-
-    private:
-      std::string_view file;
-      EntityRegistry& registry;
+  private:
+    std::string_view file;
+    EntityRegistry& registry;
+    std::optional<std::reference_wrapper<EntityRegistry::file_catalog_t>> catalog;
   };
 
   friend EntityFileInserter;
@@ -339,26 +424,14 @@ public:
       throw std::runtime_error(std::format("empty file path or no filename"));
     }
     std::filesystem::path normalized = path.lexically_normal();
-    return *file_entities.emplace_back(normalized, std::forward<decltype(args)>(args)...);
+    FwdRef<FileEntity> fe = *file_entities.emplace_back(normalized, std::forward<decltype(args)>(args)...);
+    auto [it, newly_inserted] = files_map.try_emplace(fe->get_path(), fe);
+    if (not newly_inserted) {
+      file_entities.erase(fe);
+      throw std::runtime_error(std::format("file \"{}\" is already inserted", normalized.native()));
+    }
+    return fe;
   }
-
-  inline const auto& get_types_view() const noexcept { return type_entities; }
-
-  inline const auto& get_functions_view() const noexcept { return function_entities; }
-
-  inline const auto& get_variables_view() const noexcept { return variable_entities; }
-
-  inline const auto& get_enums_view() const noexcept { return enum_entities; }
-
-  inline const auto& get_namespaces_view() const noexcept { return namespace_entities; }
-
-  inline const auto& get_typedefs_view() const noexcept { return typedef_entities; }
-
-  inline const auto& get_concepts_view() const noexcept { return concept_entities; }
-
-  inline const auto& get_operators_view() const noexcept { return operator_entities; }
-
-  inline const auto& get_macros_view() const noexcept { return macro_entities; }
 
   inline std::optional<FwdRef<GroupEntity>> get_group(std::string_view name) const {
     auto it = name_group_map.find(name);
@@ -379,14 +452,7 @@ public:
   }
 
   children_view_t<TypeEntity> get_type_children_for(const RefVariant& parent) const {
-    return std::visit([this]<entity ParentT>(const FwdRef<ParentT>& p) -> children_view_t<TypeEntity> {
-      if constexpr (not container_of<ParentT, TypeEntity>) {
-        throw std::logic_error(std::format("Entities of type {} have no children of type {}",
-          entity_name<ParentT>(), entity_name<TypeEntity>()));
-      } else {
-        return this->_get_children_view<ParentT, TypeEntity>(p);
-      }
-    }, parent);
+    return _get_children_for<TypeEntity>(parent);
   }
 
   template<entity ParentT> requires container_of<ParentT, TypeEntity>
@@ -395,14 +461,7 @@ public:
   }
 
   children_view_t<FunctionEntity> get_function_children_for(const RefVariant& parent) const {
-    return std::visit([this]<entity ParentT>(const FwdRef<ParentT>& p) -> children_view_t<FunctionEntity> {
-      if constexpr (not container_of<ParentT, FunctionEntity>) {
-        throw std::logic_error(std::format("Entities of type {} have no children of type {}",
-          entity_name<ParentT>(), entity_name<FunctionEntity>()));
-      } else {
-      return this->_get_children_view<ParentT, FunctionEntity>(p);
-      }
-    }, parent);
+    return _get_children_for<FunctionEntity>(parent);
   }
 
   template<entity ParentT> requires container_of<ParentT, VariableEntity>
@@ -411,14 +470,7 @@ public:
   }
 
   children_view_t<VariableEntity> get_variable_children_for(const RefVariant& parent) const {
-    return std::visit([this]<entity ParentT>(const FwdRef<ParentT>& p) -> children_view_t<VariableEntity> {
-      if constexpr (not container_of<ParentT, VariableEntity>) {
-        throw std::logic_error(std::format("Entities of type {} have no children of type {}",
-          entity_name<ParentT>(), entity_name<VariableEntity>()));
-      } else {
-        return this->_get_children_view<ParentT, VariableEntity>(p);
-      }
-    }, parent);
+    return _get_children_for<VariableEntity>(parent);
   }
 
   template<entity ParentT> requires container_of<ParentT, EnumEntity>
@@ -427,14 +479,7 @@ public:
   }
 
   children_view_t<EnumEntity> get_enum_children_for(const RefVariant& parent) const {
-    return std::visit([this]<entity ParentT>(const FwdRef<ParentT>& p) -> children_view_t<EnumEntity> {
-      if constexpr (not container_of<ParentT, EnumEntity>) {
-        throw std::logic_error(std::format("Entities of type {} have no children of type {}",
-          entity_name<ParentT>(), entity_name<EnumEntity>()));
-      } else {
-      return this->_get_children_view<ParentT, EnumEntity>(p);
-      }
-    }, parent);
+    return _get_children_for<EnumEntity>(parent);
   }
 
   template<entity ParentT> requires container_of<ParentT, NamespaceEntity>
@@ -443,14 +488,7 @@ public:
   }
 
   children_view_t<NamespaceEntity> get_namespace_children_for(const RefVariant& parent) const {
-    return std::visit([this]<entity ParentT>(const FwdRef<ParentT>& p) -> children_view_t<NamespaceEntity> {
-      if constexpr (not container_of<ParentT, NamespaceEntity>) {
-        throw std::logic_error(std::format("Entities of type {} have no children of type {}",
-          entity_name<ParentT>(), entity_name<NamespaceEntity>()));
-      } else {
-        return this->_get_children_view<ParentT, NamespaceEntity>(p);
-      }
-    }, parent);
+    return _get_children_for<NamespaceEntity>(parent);
   }
 
   template<entity ParentT> requires container_of<ParentT, TypedefEntity>
@@ -459,14 +497,7 @@ public:
   }
 
   children_view_t<TypedefEntity> get_typedef_children_for(const RefVariant& parent) const {
-    return std::visit([this]<entity ParentT>(const FwdRef<ParentT>& p) -> children_view_t<TypedefEntity> {
-      if constexpr (not container_of<ParentT, TypedefEntity>) {
-        throw std::logic_error(std::format("Entities of type {} have no children of type {}",
-          entity_name<ParentT>(), entity_name<TypedefEntity>()));
-      } else {
-        return this->_get_children_view<ParentT, TypedefEntity>(p);
-      }
-    }, parent);
+    return _get_children_for<TypedefEntity>(parent);
   }
 
   template<entity ParentT> requires container_of<ParentT, ConceptEntity>
@@ -475,14 +506,7 @@ public:
   }
 
   children_view_t<ConceptEntity> get_concept_children_for(const RefVariant& parent) const {
-    return std::visit([this]<entity ParentT>(const FwdRef<ParentT>& p) -> children_view_t<ConceptEntity> {
-      if constexpr (not container_of<ParentT, ConceptEntity>) {
-        throw std::logic_error(std::format("Entities of type {} have no children of type {}",
-          entity_name<ParentT>(), entity_name<ConceptEntity>()));
-      } else {
-        return this->_get_children_view<ParentT, ConceptEntity>(p);
-      }
-    }, parent);
+    return _get_children_for<ConceptEntity>(parent);
   }
 
   template<entity ParentT> requires container_of<ParentT, OperatorEntity>
@@ -491,14 +515,7 @@ public:
   }
 
   children_view_t<OperatorEntity> get_operator_children_for(const RefVariant& parent) const {
-    return std::visit([this]<entity ParentT>(const FwdRef<ParentT>& p) -> children_view_t<OperatorEntity> {
-      if constexpr (not container_of<ParentT, OperatorEntity>) {
-        throw std::logic_error(std::format("Entities of type {} have no children of type {}",
-          entity_name<ParentT>(), entity_name<OperatorEntity>()));
-      } else {
-        return this->_get_children_view<ParentT, OperatorEntity>(p);
-      }
-    }, parent);
+    return _get_children_for<OperatorEntity>(parent);
   }
 
   template<entity ParentT> requires container_of<ParentT, MacroEntity>
@@ -507,84 +524,63 @@ public:
   }
 
   children_view_t<MacroEntity> get_macro_children_for(const RefVariant& parent) const {
-    return std::visit([this]<entity ParentT>(const FwdRef<ParentT>& p) -> children_view_t<MacroEntity> {
-      if constexpr (not container_of<ParentT, MacroEntity>) {
-        throw std::logic_error(std::format("Entities of type {} have no children of type {}",
-          entity_name<ParentT>(), entity_name<MacroEntity>()));
-      } else {
-        return this->_get_children_view<ParentT, MacroEntity>(p);
-      }
-    }, parent);
+    return _get_children_for<MacroEntity>(parent);
+  }
+
+  void remove_file(const std::filesystem::path& file) {
+    std::filesystem::path normalized = file.lexically_normal();
+    std::string_view filename = normalized.native();
+    auto it  = catalog.find(filename);
+    if (it == catalog.end()) {
+      return;
+    }
+    file_catalog_t& cat = it->second;
+    auto dispatcher = [this]<entity T>(file_catalog_t& cat) {
+      // remove <root, [destinations]> for file (if any)
+      remove_file_root_edges<T>(cat);
+      // for each group g, remove all <g, [destinations]> pairs for file (if any)
+      remove_file_group_edges<T>(cat);
+      // for each entity source, remove any <source, destinations> pair for file
+      remove_file_sources<T>(cat);
+      // deallocate all entities (both source and destination)
+      remove_file_catalog<T>(cat);
+    };
+
+    dispatcher.operator()<TypeEntity>(cat);
+    dispatcher.operator()<FunctionEntity>(cat);
+    dispatcher.operator()<VariableEntity>(cat);
+    dispatcher.operator()<EnumEntity>(cat);
+    dispatcher.operator()<NamespaceEntity>(cat);
+    dispatcher.operator()<TypedefEntity>(cat);
+    dispatcher.operator()<ConceptEntity>(cat);
+    dispatcher.operator()<OperatorEntity>(cat);
+    dispatcher.operator()<MacroEntity>(cat);
+
+    auto fit = files_map.find(filename);
+    if (fit == files_map.end()) {
+      throw std::logic_error(std::format("file \"{}\" not present", filename));
+    }
+    file_entities.erase(fit->second);
+    files_map.erase(fit);
   }
 
 private:
-  struct file_catalog {
-    std::optional<entities_storage<TypeEntity>::sequence_iter> type_opt;
-    std::optional<entities_storage<FunctionEntity>::sequence_iter> function_opt;
-    std::optional<entities_storage<VariableEntity>::sequence_iter> variable_opt;
-    std::optional<entities_storage<EnumEntity>::sequence_iter> enum_opt;
-    std::optional<entities_storage<NamespaceEntity>::sequence_iter> namespace_opt;
-    std::optional<entities_storage<TypedefEntity>::sequence_iter> typedef_opt;
-    std::optional<entities_storage<ConceptEntity>::sequence_iter> concept_opt;
-    std::optional<entities_storage<OperatorEntity>::sequence_iter> operator_opt;
-    std::optional<entities_storage<MacroEntity>::sequence_iter> macro_opt;
-
-    file_catalog() = default;
-
-    template<entity T> std::optional<typename entities_storage<T>::sequence_iter>& get_entity_opt() {
-      if constexpr (std::same_as<T, TypeEntity>) {
-        return type_opt;
-      } else if constexpr (std::same_as<T, FunctionEntity>) {
-        return function_opt;
-      } else if constexpr (std::same_as<T, VariableEntity>) {
-        return variable_opt;
-      } else if constexpr (std::same_as<T, EnumEntity>) {
-        return enum_opt;
-      } else if constexpr (std::same_as<T, NamespaceEntity>) {
-        return namespace_opt;
-      } else if constexpr (std::same_as<T, TypedefEntity>) {
-        return typedef_opt;
-      } else if constexpr (std::same_as<T, ConceptEntity>) {
-          return concept_opt;
-      } else if constexpr (std::same_as<T, OperatorEntity>) {
-          return operator_opt;
-      } else /*if constexpr (std::same_as<T, MacroEntity>)*/ {
-          return macro_opt;
-      }
-    }
-  };
 
   mutable FwdList<RootEntity> root;
 
+  FwdList<FileEntity> file_entities;
+  std::unordered_map<std::string_view, FwdRef<FileEntity>> files_map;
+
   // nodes
   FwdList<GroupEntity> group_entities;
-  FwdList<TypeEntity> type_entities;
-  FwdList<FunctionEntity> function_entities;
-  FwdList<VariableEntity> variable_entities;
-  FwdList<EnumEntity> enum_entities;
-  FwdList<NamespaceEntity> namespace_entities;
-  FwdList<TypedefEntity> typedef_entities;
-  FwdList<ConceptEntity> concept_entities;
-  FwdList<OperatorEntity> operator_entities;
-  FwdList<MacroEntity> macro_entities;
-
-  FwdList<FileEntity> file_entities;
+  // map: group name -> group entity
+  std::unordered_map<std::string_view, FwdRef<GroupEntity>> name_group_map;
+  entity_content<FwdList> code_entities;
 
   // edges
   entities_storage<GroupEntity> group_edges;
-  edges_map_t<TypeEntity> type_edges;
-  edges_map_t<FunctionEntity> function_edges;
-  edges_map_t<VariableEntity> variable_edges;
-  edges_map_t<EnumEntity> enum_edges;
-  edges_map_t<NamespaceEntity> namespace_edges;
-  edges_map_t<TypedefEntity> typedef_edges;
-  edges_map_t<ConceptEntity> concept_edges;
-  edges_map_t<OperatorEntity> operator_edges;
-  edges_map_t<MacroEntity> macro_edges;
-
-
-  std::unordered_map<std::string_view, file_catalog> name_root_map;
-  std::unordered_map<std::string_view, FwdRef<GroupEntity>> name_group_map;
-  // indexed by file first and then group name
-  std::unordered_map<std::string_view, std::unordered_map<std::string_view, file_catalog>> filename_group_catalogs_map;
+  // map: source entity (FwdHashable) -> [destinations sequences]
+  // the source entity can be **any** entity: root, group, ...
+  entity_content<edges_map_t> code_edges;
+  std::unordered_map<std::string_view, file_catalog_t> catalog;
 };

@@ -1,62 +1,70 @@
 #include "JSONGenerator.hpp"
 
-#include "Entity.hpp"
+#include "FileSystemInfo.hpp"
+#include "Sink.hpp"
+#include "generation/Dfs_traversal.hpp"
 
-#include <stdint.h>
-#include <iostream>
-#include <list>
-#include <string>
-#include <vector>
+constexpr std::string_view FRONT = R""""({{
+  "format_version:": "2",
+  "gcovr/format_version": "0.6",
+  "files": [
+)"""";
 
-void JSONGenerator::generate(const Entity& root) {
-  /* JSON header */
-  std::cout << "{" << std::endl;
-  std::cout << "  \"format_version:\": \"2\"," << std::endl;
-  std::cout << "  \"gcovr/format_version\": \"0.6\"," << std::endl;
-  std::cout << "  \"files\": [" << std::endl;
+constexpr std::string_view END = R""""(
+  ]
+}}
+)"""";
 
-  /* JSON body */
-  generate(root, 0);
+constexpr std::string_view FILE_FRONT =
+R""""(    {{
+    "file": "{}",
+    "functions": [],
+    "lines": [)"""";
 
-  /* JSON footer */
-  std::cout << std::endl;
-  std::cout << "  ]" << std::endl;
-  std::cout << "}" << std::endl;
-}
+constexpr std::string_view LINE_CONTENT =
+R""""(
+      {{
+        "line_number": {},
+        "branches": [],
+        "count": {}
+      }})"""";
 
-int JSONGenerator::generate(const Entity& root, int nfiles) {
-  for (auto& dir : root.dirs) {
-    nfiles = generate(dir, nfiles);
-  }
-  for (auto& file : root.files) {
-    if (nfiles > 0) {
-      std::cout << "," << std::endl;
+constexpr std::string_view FILE_END =
+R""""(
+    ]
+  }})"""";
+
+void JSONGenerator::generate(const FileSystemInfo& fsinfo) {
+  sink_t sink;
+  sink.println(FRONT);
+
+  bool first = true;
+  ConstDirStackController controller{fsinfo};
+  for (const auto& [_, dirinfo]: traverse_dfs_preorder<ConstDirStackController, false>(controller)) {
+    if (dirinfo.files.empty()) {
+      continue;
     }
-    std::cout << "    {" << std::endl;
-    std::cout << "      \"file\": \"" << file.name << "\"," << std::endl;
-    std::cout << "      \"functions\": []," << std::endl;
-    std::cout << "      \"lines\": [" << std::endl;
-
-    /* line information; note lines are stored zero-based, but must be
-      * output 1-based */
-    uint32_t nlines = 0;
-    for (uint32_t line = 0; line < file.line_counts.size(); ++line) {
-      if (file.line_counts[line] >= 0) {
-        if (nlines > 0) {
-          std::cout << "," << std::endl;
-        }
-        ++nlines;
-        std::cout << "        {" << std::endl;
-        std::cout << "          \"line_number\": " << (line + 1) << "," << std::endl;
-        std::cout << "          \"branches\": []," << std::endl;
-        std::cout << "          \"count\": " << file.line_counts[line] << std::endl;
-        std::cout << "        }";
+    for(const auto& fe: dirinfo.files) {
+      if (not first) {
+        sink.println(",");
       }
+      first = false;
+
+      sink.println(FILE_FRONT, fe->get_filename());
+      bool line_first = true;
+      const auto& line_counts = fe->get_line_counts();
+      for(std::size_t line = 0; line < line_counts.size(); line++) {
+        if (line_counts[line] < 0) {
+          continue;
+        }
+        if (not line_first) {
+          sink.println(",");
+        }
+        line_first = false;
+        sink.print(LINE_CONTENT, line + 1, line_counts[line]);
+      }
+      sink.println(FILE_END);
     }
-    std::cout << std::endl;
-    std::cout << "      ]" << std::endl;
-    std::cout << "    }";
-    ++nfiles;
   }
-  return nfiles;
+  sink.println(END);
 }

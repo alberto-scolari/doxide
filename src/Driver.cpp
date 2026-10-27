@@ -253,7 +253,7 @@ void Driver::watch() {
       fsinfo.remove_all_files();
       build();
 
-      config_watcher = SourceWatcher(config_file.string());
+      config_watcher = SourceWatcher(config_file.native());
       watcher = SourceWatcher(files_patterns);
 
       std::cout << "Done" << std::endl;

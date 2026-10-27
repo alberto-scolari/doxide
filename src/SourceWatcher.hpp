@@ -2,10 +2,10 @@
 
 #include <filesystem>
 #include <list>
-#include <unordered_set>
-#include <unordered_map>
-#include <tuple>
 #include <string>
+#include <tuple>
+#include <unordered_map>
+#include <unordered_set>
 
 /**
  * Source Watcher.
@@ -21,12 +21,12 @@ public:
    *
    * @param patterns
    */
-  SourceWatcher(std::list<std::string> patterns);
+  SourceWatcher(const std::list<std::string>& patterns);
 
   /**
    * Constructor for a single pattern.
    */
-  SourceWatcher(std::string pattern);
+  SourceWatcher(const std::string& pattern);
 
   /**
    * Check if any of the watched files changed since the last call to `changed()` or `diff()`.

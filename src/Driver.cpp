@@ -20,11 +20,14 @@
 
 #include <glob/glob.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <format>
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <regex>
 #include <stdexcept>
 #include <thread>
@@ -246,7 +249,6 @@ void Driver::watch() {
       std::cout << std::endl << "Detected configuration file change." << std::endl;
       std::cout << "Rebuilding documentation..." << std::endl;
 
-      root.clear();
       fscleaner.remove_all_files();
       fsinfo.remove_all_files();
       build();
@@ -409,14 +411,8 @@ void Driver::config() {
   }
 
   /* initialize root entity */
-  groups(yaml, root);
-  root.title = title;
-  root.docs = description;
-
   registry.emplace(title, description);
-  for (const auto& g: root.groups) {
-    registry->add_group(g.name, g.title, g.docs);
-  }
+  groups(yaml);
 }
 
 void Driver::parse() {
@@ -457,9 +453,7 @@ void Driver::count() {
 
 void Driver::aggregate_stats() {
   DirStackController controller{fsinfo};
-  // std::cout << "AGGREGATE\n";
   for (auto& [path, dirinfo]: traverse_dfs_preorder<DirStackController, false>(controller)) {
-    // std::cout << path << "\n";
     for(const FwdRef<FileEntity> fe: dirinfo.files) {
       dirinfo.stats += *fe;
     }
@@ -500,25 +494,39 @@ void Driver::remove_file(const std::filesystem::path filename) {
   registry->remove_file(filename);
 }
 
-void Driver::groups(YAMLNode& parentNode, Entity& parentEntity) {
-  if (parentNode.isSequence("groups")) {
-    for (auto& node : parentNode.sequence("groups")) {
-      Entity entity;
-      entity.type = EntityType::GROUP;
-      entity.visible = true;
-      if (node->isValue("name")) {
-        entity.name = node->value("name");
-        if (node->isValue("title")) {
-          entity.title = node->value("title");
-        }
-        if (node->isValue("description")) {
-          entity.docs = node->value("description");
-        }
-      } else {
-        warn("a group is missing a name in the configuration file.")
-      }
-      groups(*node, entity);
-      parentEntity.add(std::move(entity));
+void Driver::groups(YAMLNode& groups_root) {
+  if (not groups_root.isSequence("groups")) {
+    return;
+  }
+  using parent_t = std::optional<FwdRef<GroupEntity>>;
+  std::stack<std::tuple<const YAMLNode::sequence_type&, YAMLNode::sequence_type::const_iterator, parent_t>> stack;
+  const auto& seq = groups_root.sequence("groups");
+  stack.emplace(seq, seq.cbegin(), std::nullopt);
+
+  while(not stack.empty()) {
+    auto& [seq, iter, parent] = stack.top();
+    if (iter == seq.cend()) {
+      stack.pop();
+      continue;
+    }
+    const auto& node = **iter;
+    std::string_view name = node.isValue("name") ? std::string_view{node.value("name")} : "";
+    std::string_view title = node.isValue("title") ? std::string_view{node.value("title")} : "";
+    std::string_view desc = node.isValue("description") ? std::string_view{node.value("description")} : "";
+    parent_t group = parent;
+    if (name.size() == 0 or std::all_of(name.begin(), name.end(), isspace)) {
+      // ignore the group
+      warn("a group is missing a name in the configuration file.");
+    } else {
+      group = parent ? registry->add_group(*parent, name, title, desc)
+        : registry->add_group(name, title, desc);
+    }
+    // move to next
+    ++iter;
+    if (node.isSequence("groups")) {
+      // look for a subsequence and push
+      const auto& child_seq = node.sequence("groups");
+      stack.emplace(child_seq, child_seq.cbegin(), group);
     }
   }
 }

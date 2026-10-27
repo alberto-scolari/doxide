@@ -6,7 +6,6 @@
 #include "FileSystemInfo.hpp"
 
 #include <stddef.h>
-#include <list>
 #include <memory>
 #include <ostream>
 #include <string>
@@ -17,25 +16,25 @@ void JSONCounter::count(const std::filesystem::path& coverage, FileSystemInfo& f
   YAMLNode node = parser.parse(coverage);
   if (!node.isSequence("files")) {
     warn("missing 'files' key in " << coverage);
-  } else for (auto file : node.sequence("files")) {
+  } else for (const auto& file : node.sequence("files")) {
     if (!file->isValue("file")) {
       warn("missing 'file' key in 'files' element in " << file);
     } else if (!file->isSequence("lines")) {
       warn("missing 'lines' key in 'files' element in " << file);
     } else {
-      auto lines = file->sequence("lines");
+      const auto& lines = file->sequence("lines");
       std::filesystem::path path = file->value("file");
       if (path.is_absolute()) {
         /* make the path relative to the current working directory */
         path = std::filesystem::relative(path);
       }
       path = path.lexically_normal();
-      std::optional<FwdRef<FileEntity>> file = fsinfo.lookup_file(path);
-      if (file) {  // otherwise not included
+      std::optional<FwdRef<FileEntity>> file_opt = fsinfo.lookup_file(path);
+      if (file_opt) {  // otherwise not included
         /* update line coverage for this file */
-        FwdRef<FileEntity> f = *file;
+        FwdRef<FileEntity> f = *file_opt;
         size_t nlines = f->get_line_counts().size();
-        for (auto line : lines) {
+        for (const auto& line : lines) {
           if (!line->has("line_number")) {
             warn("missing 'line_number' key in 'lines' element in " << f->get_name());
           } else if (!line->has("count")) {

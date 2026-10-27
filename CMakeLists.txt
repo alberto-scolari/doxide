@@ -130,7 +130,6 @@ add_executable(doxide
   src/DocToken.cpp
   src/DocTokenizer.cpp
   src/Driver.cpp
-  src/Entity.cpp
   src/FSCleaner.cpp
   src/GcovCounter.cpp
   src/JSONCounter.cpp

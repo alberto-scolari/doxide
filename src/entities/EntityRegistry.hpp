@@ -29,8 +29,6 @@
 #include <unordered_set>
 #include <utility>
 
-#include <iostream>
-
 class EntityRegistry {
 
   template<entity T> class entities_storage {
@@ -218,6 +216,12 @@ public:
     }
     group_edges.back_new_iter()->push_back(res);
     return res;
+  }
+
+  inline FwdRef<GroupEntity> add_group(FwdRef<GroupEntity> parent, auto&&... args) {
+    FwdRef<GroupEntity> child = add_group(std::forward<decltype(args)>(args)...);
+    group_hierarchy[parent].push_back(child);
+    return child;
   }
 
   template<entity ChildT, entity ParentT> void remove_edges_sequence(const FwdRef<ParentT>& e,
@@ -575,6 +579,9 @@ private:
   FwdList<GroupEntity> group_entities;
   // map: group name -> group entity
   std::unordered_map<std::string_view, FwdRef<GroupEntity>> name_group_map;
+  std::unordered_map<FwdRef<GroupEntity>, std::vector<FwdRef<GroupEntity>>> group_hierarchy;
+
+
   entity_content<FwdList> code_entities;
 
   // edges

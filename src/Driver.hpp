@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Entity.hpp"
 #include "entities/EntityRegistry.hpp"
 #include "FileSystemInfo.hpp"
 #include "FSCleaner.hpp"
@@ -106,14 +105,9 @@ private:
   void remove_file(const std::filesystem::path filename);
 
   /**
-   * Recursively read groups from the configuration file.
+   * Read groups from the configuration file.
    */
-  static void groups(YAMLNode& parentNode, Entity& parentEntity);
-
-  /**
-   * Root entity.
-   */
-  Entity root;
+  void groups(YAMLNode& parentNode);
 
   std::optional<EntityRegistry> registry;
 

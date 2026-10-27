@@ -1,6 +1,8 @@
 #include "YAMLNode.hpp"
 
-bool YAMLNode::has(const key_type& key) const {
+#include <utility>
+
+bool YAMLNode::has(const key_view_type& key) const {
   return isMapping() && mapping().contains(key);
 }
 
@@ -14,10 +16,6 @@ bool YAMLNode::isSequence() const {
 
 bool YAMLNode::isMapping() const {
   return std::holds_alternative<mapping_type>(contents);
-}
-
-YAMLNode::value_type& YAMLNode::value() {
-  return std::get<value_type>(contents);
 }
 
 const YAMLNode::value_type& YAMLNode::value() const {
@@ -40,8 +38,8 @@ const YAMLNode::mapping_type& YAMLNode::mapping() const {
   return std::get<mapping_type>(contents);
 }
 
-void YAMLNode::set(const variant_type& contents) {
-  this->contents = contents;
+void YAMLNode::set(variant_type&& contents) {
+  this->contents = std::move(contents);
 }
 
 void YAMLNode::setSequence() {
@@ -56,7 +54,7 @@ YAMLNode& YAMLNode::push() {
   return *sequence().emplace_back(std::make_unique<YAMLNode>());
 }
 
-YAMLNode& YAMLNode::insert(const key_type& key) {
-  return *mapping().insert(std::make_pair(key,
-      std::make_unique<YAMLNode>())).first->second;
+YAMLNode& YAMLNode::insert(key_type&& key) {
+  return *mapping().emplace(std::move(key),
+      std::make_unique<YAMLNode>()).first->second;
 }

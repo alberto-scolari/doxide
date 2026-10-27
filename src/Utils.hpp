@@ -66,3 +66,15 @@ template <> struct std::formatter<RepeatChar> {
         return std::fill_n(ctx.out(), rc.count, rc.ch);
     }
 };
+
+struct het_string_hash {
+    using is_transparent = void; // Enables heterogeneous lookup
+
+    constexpr std::size_t operator()(const std::string_view& sv) const noexcept {
+        return std::hash<std::string_view>{}(sv);
+    }
+
+    constexpr std::size_t operator()(const std::string& s) const noexcept {
+        return std::hash<std::string>{}(s);
+    }
+};

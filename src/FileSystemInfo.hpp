@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Utils.hpp"
 #include "entities/FileEntity.hpp"
 #include "entities/FwdRef.hpp"
 #include "entities/LineStats.hpp"
@@ -64,18 +65,7 @@ public:
   }
 
 private:
-  struct string_hash {
-      using is_transparent = void; // Enables heterogeneous lookup
-
-      std::size_t operator()(std::string_view sv) const {
-          return std::hash<std::string_view>{}(sv);
-      }
-      std::size_t operator()(const std::string& s) const {
-          return std::hash<std::string>{}(s);
-      }
-  };
-
-  std::unordered_map<std::string, DirInfo, string_hash, std::equal_to<>> dir_info_map;
+  std::unordered_map<std::string, DirInfo, het_string_hash, std::equal_to<>> dir_info_map;
   std::unordered_map<std::string_view, FwdRef<FileEntity>> files_map;
 };
 

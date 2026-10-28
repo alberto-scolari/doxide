@@ -1,7 +1,7 @@
 #include "Driver.hpp"
 
 #include "CppParser.hpp"
-#include "FileSystemInfo.hpp"
+#include "FileSystemStatsInfo.hpp"
 #include "GcovCounter.hpp"
 #include "JSONCounter.hpp"
 #include "JSONGenerator.hpp"
@@ -235,54 +235,6 @@ void Driver::build() {
   parse();
   count();
   run_generation();
-
-
-  // TEST 3
-  fsinfo.explore();
-  std::initializer_list<std::string_view> files {
-    "src/TextLineCursor.cpp",
-    "src/folder2/folder3/JSONGenerator.cpp",
-    "src/folder2/Doc.hpp",
-    "src/Entity.hpp",
-    "src/Entity.cpp",
-    "src/SourceWatcher.hpp",
-    "src/folder2/DocToken.hpp",
-    "src/Regex.hpp",
-    "src/doxide.cpp",
-    "src/TextLineCursor.hpp",
-    "src/folder2/folder3/JSONGenerator.hpp",
-    "src/Driver.cpp",
-    "src/MarkdownGenerator.cpp",
-    "src/GcovCounter.hpp",
-    "src/folder2/DocToken.cpp",
-    "src/YAMLNode.cpp",
-    "src/doxide.hpp",
-    "src/YAMLParser.hpp",
-    "src/folder2/Doc.cpp",
-    "src/folder1/CppParser.hpp",
-    "src/folder2/DocTokenizer.cpp",
-    "src/SourceWatcher.cpp",
-    "src/Log.hpp",
-    "src/YAMLParser.cpp",
-    "demo/presentation.hpp",
-    "src/Driver.hpp",
-    "src/folder2/DocTokenizer.hpp",
-    "src/folder2/folder3/JSONCounter.cpp",
-    "src/folder2/folder3/JSONCounter.hpp",
-    "src/YAMLNode.hpp",
-    "src/MarkdownGenerator.hpp",
-    "ciao.cpp",
-    "src/GcovCounter.cpp",
-    "src/folder1/CppParser.cpp",
-    "demo/parsing.hpp"
-  };
-  for(const auto& f: files) {
-    std::cout << "=== remove file " << f << std::endl;
-    remove_file(std::filesystem::path(f));
-  }
-  fsinfo.explore();
-  run_generation();
-
 }
 
 void Driver::watch() {
@@ -303,9 +255,9 @@ void Driver::watch() {
       std::cout << std::endl << "Detected configuration file change." << std::endl;
       std::cout << "Rebuilding documentation..." << std::endl;
 
-      fscleaner.forget_all_files();
-      fsinfo.forget_all_files();
-      registry.clear_all();
+      fscleaner.clear();
+      fsinfo.clear();
+      registry.clear();
       build();
 
       config_watcher = SourceWatcher(*config_file);
@@ -442,7 +394,7 @@ void Driver::run_generation() {
     MdCoverageGenerator cov_gen(*coverage_path, fscleaner);
     cov_gen.generate(fsinfo);
   }
-  fscleaner.clean();
+  fscleaner.delete_all_files();
 }
 
 void Driver::remove_file(const std::filesystem::path filename) {

@@ -1,6 +1,6 @@
 #include "MarkdownGenerator.hpp"
 
-#include <FSCleaner.hpp>
+#include <FileSystemDeleter.hpp>
 #include <Sink.hpp>
 #include <Utils.hpp>
 #include <entities/ContainerBases.hpp>
@@ -10,12 +10,6 @@
 #include <entities/NamespaceEntity.hpp>
 #include <entities/RefVariant.hpp>
 #include <entities/TypeEntity.hpp>
-#include "entities/ConceptEntity.hpp"
-#include "entities/FunctionEntity.hpp"
-#include "entities/MacroEntity.hpp"
-#include "entities/OperatorEntity.hpp"
-#include "entities/TypedefEntity.hpp"
-#include "entities/VariableEntity.hpp"
 #include "generation/DocRenderer.hpp"
 
 #include "Dfs_traversal.hpp"

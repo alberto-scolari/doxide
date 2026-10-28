@@ -1,11 +1,11 @@
-#include "FileSystemInfo.hpp"
+#include "FileSystemStatsInfo.hpp"
 
 #include <format>
 #include <stdexcept>
 
 #include <iostream>
 
-std::optional<FwdRef<FileEntity>> FileSystemInfo::lookup_file(std::string_view path) {
+std::optional<FwdRef<FileEntity>> FileSystemStatsInfo::lookup_file(std::string_view path) {
   auto it = files_map.find(path);
   if (it == files_map.end()) {
     return {};
@@ -13,7 +13,7 @@ std::optional<FwdRef<FileEntity>> FileSystemInfo::lookup_file(std::string_view p
   return it->second;
 }
 
-std::optional<std::reference_wrapper<FileSystemInfo::DirInfo>> FileSystemInfo::lookup_dir(std::string_view path) {
+std::optional<std::reference_wrapper<FileSystemStatsInfo::DirInfo>> FileSystemStatsInfo::lookup_dir(std::string_view path) {
   auto it = dir_info_map.find(path);
   if (it == dir_info_map.end()) {
     return {};
@@ -21,7 +21,7 @@ std::optional<std::reference_wrapper<FileSystemInfo::DirInfo>> FileSystemInfo::l
   return it->second;
 }
 
-std::optional<std::reference_wrapper<const FileSystemInfo::DirInfo>> FileSystemInfo::lookup_dir(std::string_view path) const {
+std::optional<std::reference_wrapper<const FileSystemStatsInfo::DirInfo>> FileSystemStatsInfo::lookup_dir(std::string_view path) const {
   auto it = dir_info_map.find(path);
   if (it == dir_info_map.cend()) {
     return {};
@@ -29,7 +29,7 @@ std::optional<std::reference_wrapper<const FileSystemInfo::DirInfo>> FileSystemI
   return it->second;
 }
 
-void FileSystemInfo::add_file(const std::filesystem::path& path, FwdRef<FileEntity> file) {
+void FileSystemStatsInfo::add_file(const std::filesystem::path& path, FwdRef<FileEntity> file) {
   namespace fs = std::filesystem;
 
   if (path.empty() or not path.has_filename()) {
@@ -71,7 +71,7 @@ void FileSystemInfo::add_file(const std::filesystem::path& path, FwdRef<FileEnti
   pit->second.subdirs.insert(it->first);
 }
 
-void FileSystemInfo::explore() const {
+void FileSystemStatsInfo::explore() const {
   std::cout << "DIRS\n";
   for(const auto& [k, v]: dir_info_map) {
     std::cout << "----- " << k << ":\n";
@@ -89,7 +89,7 @@ void FileSystemInfo::explore() const {
   }
 }
 
-void FileSystemInfo::remove_file(const std::filesystem::path& filepath) {
+void FileSystemStatsInfo::remove_file(const std::filesystem::path& filepath) {
   namespace fs = std::filesystem;
   fs::path normalized = filepath.lexically_normal();
   std::string_view norm_view = normalized.native();
@@ -126,5 +126,4 @@ void FileSystemInfo::remove_file(const std::filesystem::path& filepath) {
     }
     dir_info_map.erase(current_it);
   }
-
 }

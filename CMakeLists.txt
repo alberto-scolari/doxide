@@ -131,11 +131,11 @@ add_executable(doxide
   src/DocTokenizer.cpp
   src/Driver.cpp
   src/DriverConfigParser.cpp
-  src/FSCleaner.cpp
+  src/FileSystemDeleter.cpp
+  src/FileSystemStatsInfo.cpp
   src/GcovCounter.cpp
   src/JSONCounter.cpp
   src/JSONGenerator.cpp
-  src/FileSystemInfo.cpp
   src/SourceWatcher.cpp
   src/StyleOption.cpp
   src/TextLineCursor.cpp

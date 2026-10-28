@@ -15,7 +15,7 @@ class ConceptEntity;
 class DocRendererFactory;
 class EntityRegistry;
 class EnumEntity;
-class FSCleaner;
+class FileSystemDeleter;
 class FunctionEntity;
 class GroupEntity;
 class MacroEntity;
@@ -36,7 +36,7 @@ public:
     * @param output Output directory.
     * @param style Markdown style.
     */
-  MarkdownGenerator(const std::filesystem::path& output, FSCleaner& _fscleaner, StyleOption style):
+  MarkdownGenerator(const std::filesystem::path& output, FileSystemDeleter& _fscleaner, StyleOption style):
     output(output),
     fscleaner(_fscleaner),
     doc_render_factory(make_doc_renderer(style))
@@ -62,7 +62,7 @@ private:
    */
   std::filesystem::path output;
 
-  FSCleaner& fscleaner;
+  FileSystemDeleter& fscleaner;
 
   std::unique_ptr<DocRendererFactory> doc_render_factory;
 

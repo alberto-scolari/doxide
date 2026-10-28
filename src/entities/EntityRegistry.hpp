@@ -569,7 +569,7 @@ public:
     files_map.erase(fit);
   }
 
-  void clear_all() {
+  void clear() {
     auto type_dispatcher = []<template <typename> typename Container>(entity_content<Container>& storage, auto&& clearer) {
       clearer(storage.template get_for<TypeEntity>());
       clearer(storage.template get_for<FunctionEntity>());

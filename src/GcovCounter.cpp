@@ -3,7 +3,7 @@
 #include "Log.hpp"
 #include "Regex.hpp"
 
-#include "FileSystemInfo.hpp"
+#include "FileSystemStatsInfo.hpp"
 
 #include <stddef.h>
 #include <fstream>
@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <string>
 
-void GcovCounter::count(const std::filesystem::path& coverage, FileSystemInfo& fsinfo) {
+void GcovCounter::count(const std::filesystem::path& coverage, FileSystemStatsInfo& fsinfo) {
   /*
   * A sketch of the format is:
   * ```

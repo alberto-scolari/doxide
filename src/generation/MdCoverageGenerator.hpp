@@ -1,11 +1,11 @@
 #pragma once
 
-#include <FileSystemInfo.hpp>
+#include <FileSystemStatsInfo.hpp>
 
 #include <filesystem>
 #include <string_view>
 
-class FSCleaner;
+class FileSystemDeleter;
 class sink_t;
 
 class MdCoverageGenerator {
@@ -16,7 +16,7 @@ public:
     * @param output Output directory.
     * @param style Markdown style.
     */
-  MdCoverageGenerator(const std::filesystem::path& output, FSCleaner& _fscleaner):
+  MdCoverageGenerator(const std::filesystem::path& output, FileSystemDeleter& _fscleaner):
     output(output),
     fscleaner(_fscleaner)
     {}
@@ -27,15 +27,15 @@ public:
     * @param root Root entity.
     * @param cov Include code coverage report?
     */
-  void generate(const FileSystemInfo& fsinfo);
+  void generate(const FileSystemStatsInfo& fsinfo);
 
 private:
 
   struct GenInfo {
-    const FileSystemInfo& fsinfo;
+    const FileSystemStatsInfo& fsinfo;
     sink_t& sink;
     std::string_view dirpath;
-    const FileSystemInfo::DirInfo& dirinfo;
+    const FileSystemStatsInfo::DirInfo& dirinfo;
     std::string_view title;
     bool is_not_root;
   };
@@ -53,5 +53,5 @@ private:
    */
   std::filesystem::path output;
 
-  FSCleaner& fscleaner;
+  FileSystemDeleter& fscleaner;
 };

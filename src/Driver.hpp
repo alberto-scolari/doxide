@@ -1,8 +1,8 @@
 #pragma once
 
 #include "DriverConfigParser.hpp"
-#include "FileSystemInfo.hpp"
-#include "FSCleaner.hpp"
+#include "FileSystemDeleter.hpp"
+#include "FileSystemStatsInfo.hpp"
 #include "StyleOption.hpp"
 #include "YAMLNode.hpp"
 #include "entities/EntityRegistry.hpp"
@@ -110,7 +110,7 @@ private:
    */
   void groups(const YAMLNode& parentNode);
 
-  FSCleaner fscleaner;
+  FileSystemDeleter fscleaner;
 
   EntityRegistry registry;
 
@@ -134,5 +134,5 @@ private:
    */
   std::vector<std::string> files_patterns;
 
-  FileSystemInfo fsinfo;
+  FileSystemStatsInfo fsinfo;
 };

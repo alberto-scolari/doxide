@@ -1,7 +1,7 @@
 #include "MdCoverageGenerator.hpp"
 
-#include <FSCleaner.hpp>
-#include <FileSystemInfo.hpp>
+#include <FileSystemDeleter.hpp>
+#include <FileSystemStatsInfo.hpp>
 #include <Sink.hpp>
 #include <Utils.hpp>
 #include "entities/FileEntity.hpp"
@@ -283,7 +283,7 @@ void MdCoverageGenerator::coverage_foot(GenInfo& info) {
   std::string_view root = info.is_not_root ? info.dirpath : "";
   ConstDirStackController controller{info.fsinfo, info.dirpath};
   for (const auto& [dirpath, dirinfo]: traverse_dfs_preorder<ConstDirStackController, false>(controller)) {
-    std::string_view path = dirpath != FileSystemInfo::DEF_ROOT_PATH ? dirpath : "";
+    std::string_view path = dirpath != FileSystemStatsInfo::DEF_ROOT_PATH ? dirpath : "";
     std::string name = sanitize(path);
     std::string_view style = (name == root) ? "" : ", style=\"display:none;\"";
     const auto& stats = dirinfo.stats;
@@ -388,7 +388,7 @@ struct CoverageFileDfs: public ConstDirStackController {
   using yield_value = ConstDirStackController::yield_value;
 
   const std::filesystem::path& output;
-  FSCleaner& fscleaner;
+  FileSystemDeleter& fscleaner;
 
   void before_pop(const stack_value& top) {
     static constexpr std::string_view covered_color = DisplayStats::get_color(100.0);
@@ -469,12 +469,12 @@ R""""(</style>
   }
 };
 
-void MdCoverageGenerator::generate(const FileSystemInfo& fsinfo) {
+void MdCoverageGenerator::generate(const FileSystemStatsInfo& fsinfo) {
   CoverageFileDfs controller{{fsinfo}, output, fscleaner};
   for (const auto& [dirpath, dirinfo]: traverse_dfs_preorder(controller)) {
     std::cout << "-- dir: " << dirpath << std::endl;
     std::filesystem::path outpath = output;
-    const bool is_not_root = dirpath != FileSystemInfo::DEF_ROOT_PATH;
+    const bool is_not_root = dirpath != FileSystemStatsInfo::DEF_ROOT_PATH;
     if (is_not_root) {
       outpath /= dirpath;
     }

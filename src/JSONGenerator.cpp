@@ -1,6 +1,6 @@
 #include "JSONGenerator.hpp"
 
-#include "FileSystemInfo.hpp"
+#include "FileSystemStatsInfo.hpp"
 #include "Sink.hpp"
 #include "generation/Dfs_traversal.hpp"
 
@@ -34,7 +34,7 @@ R""""(
     ]
   }})"""";
 
-void JSONGenerator::generate(const FileSystemInfo& fsinfo) {
+void JSONGenerator::generate(const FileSystemStatsInfo& fsinfo) {
   sink_t sink;
   sink.println(FRONT);
 

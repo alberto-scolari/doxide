@@ -1,6 +1,6 @@
 #pragma once
 
-class FileSystemInfo;
+class FileSystemStatsInfo;
 
 /**
  * JSON generator for coverage data following gcov/gcovr schema.
@@ -14,5 +14,5 @@ public:
    *
    * @param root Root entity.
    */
-  void generate(const FileSystemInfo& registry);
+  void generate(const FileSystemStatsInfo& registry);
 };

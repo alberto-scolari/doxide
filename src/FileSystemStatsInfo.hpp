@@ -19,14 +19,14 @@
 #include <type_traits>
 #include <utility>
 
-class FileSystemInfo {
+class FileSystemStatsInfo {
 public:
 
-  FileSystemInfo() = default;
+  FileSystemStatsInfo() = default;
 
-  FileSystemInfo(const FileSystemInfo&) = delete;
+  FileSystemStatsInfo(const FileSystemStatsInfo&) = delete;
 
-  FileSystemInfo& operator=(const FileSystemInfo&) = delete;
+  FileSystemStatsInfo& operator=(const FileSystemStatsInfo&) = delete;
 
   static inline constexpr std::string_view DEF_ROOT_PATH = "./";
 
@@ -59,7 +59,7 @@ public:
 
   void remove_file(const std::filesystem::path& filepath);
 
-  void forget_all_files() {
+  void clear() {
     dir_info_map.clear();
     files_map.clear();
   }
@@ -72,9 +72,9 @@ private:
 template<bool IS_CONST> struct _DirStackController {
 
   using _dirinfo_t = std::conditional_t<IS_CONST,
-    const FileSystemInfo::DirInfo, FileSystemInfo::DirInfo>;
+    const FileSystemStatsInfo::DirInfo, FileSystemStatsInfo::DirInfo>;
   using _fsinfo_t = std::conditional_t<IS_CONST,
-    const FileSystemInfo, FileSystemInfo>;
+    const FileSystemStatsInfo, FileSystemStatsInfo>;
 
   using iter_t = std::conditional_t<IS_CONST,
     std::unordered_set<std::string_view>::const_iterator,
@@ -83,7 +83,7 @@ template<bool IS_CONST> struct _DirStackController {
   using yield_value = std::pair<std::string_view, _dirinfo_t&>;
 
   _fsinfo_t& fsinfo;
-  std::string_view root_dir = FileSystemInfo::DEF_ROOT_PATH;
+  std::string_view root_dir = FileSystemStatsInfo::DEF_ROOT_PATH;
 
   stack_value make_init() {
     auto opt = fsinfo.lookup_dir(root_dir);

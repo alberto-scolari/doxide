@@ -2,7 +2,7 @@
 
 #include <filesystem>
 
-class FileSystemInfo;
+class FileSystemStatsInfo;
 
 /**
  * JSON processor for coverage data following gcov/gcovr schema.
@@ -17,5 +17,5 @@ public:
    * @param file Coverage file.
    * @param root Root entity.
    */
-  void count(const std::filesystem::path& file, FileSystemInfo& fsinfo);
+  void count(const std::filesystem::path& file, FileSystemStatsInfo& fsinfo);
 };

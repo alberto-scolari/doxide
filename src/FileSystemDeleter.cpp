@@ -1,4 +1,4 @@
-#include "FSCleaner.hpp"
+#include "FileSystemDeleter.hpp"
 
 #include "YAMLNode.hpp"
 #include "YAMLParser.hpp"
@@ -8,7 +8,7 @@
 
 #include <vector>
 
-void FSCleaner::clean() {
+void FileSystemDeleter::delete_all_files() {
   if (std::filesystem::exists(output) && std::filesystem::is_directory(output)) {
     for (auto& entry : std::filesystem::recursive_directory_iterator(output)) {
       if (entry.is_regular_file() && entry.path().extension() == ".md" &&

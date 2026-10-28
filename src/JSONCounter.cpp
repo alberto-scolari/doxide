@@ -3,7 +3,7 @@
 #include "Log.hpp"
 #include "YAMLNode.hpp"
 #include "YAMLParser.hpp"
-#include "FileSystemInfo.hpp"
+#include "FileSystemStatsInfo.hpp"
 
 #include <stddef.h>
 #include <memory>
@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-void JSONCounter::count(const std::filesystem::path& coverage, FileSystemInfo& fsinfo) {
+void JSONCounter::count(const std::filesystem::path& coverage, FileSystemStatsInfo& fsinfo) {
   YAMLParser parser;
   YAMLNode node = parser.parse(coverage);
   if (!node.isSequence("files")) {

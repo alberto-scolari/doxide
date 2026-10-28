@@ -29,6 +29,10 @@ public:
 
   YAMLNode() = default;
 
+  YAMLNode(YAMLNode&&) = default;
+
+  YAMLNode& operator=(YAMLNode&&) = default;
+
   /**
    * Does this have a given key?
    */

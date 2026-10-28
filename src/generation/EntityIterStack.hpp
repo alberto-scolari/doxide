@@ -49,29 +49,28 @@ using IterPackVariant = std::variant<
   entity_children_range_t<NamespaceEntity>
 >;
 
+template<entity T> decltype(auto) _in_place = std::in_place_type<entity_children_range_t<T>>;
+
 template<entity T> constexpr IterPackVariant get_pack(std::size_t index, const FwdRef<T>& node, const EntityRegistry& registry) {
   constexpr std::string_view msg = "no entity of type '{}' is stored in an entity of type '{}'";
   switch (index) {
     case 0: {
       if constexpr (container_of<T, GroupEntity>) {
-        return IterPackVariant{std::in_place_type<entity_children_range_t<GroupEntity>>,
-          registry.get_groups_view()};
+        return IterPackVariant{_in_place<GroupEntity>, registry.get_groups_view()};
       } else {
         throw std::logic_error(std::format(msg, entity_name<GroupEntity>(), entity_name<T>()));
       }
     }
     case 1: {
       if constexpr (container_of<T, TypeEntity>) {
-        return IterPackVariant{std::in_place_type<entity_children_range_t<TypeEntity>>,
-          registry.get_type_children_for(node)};
+        return IterPackVariant{_in_place<TypeEntity>, registry.get_type_children_for(node)};
       } else {
         throw std::logic_error(std::format(msg, entity_name<TypeEntity>(), entity_name<T>()));
       }
     }
     case 2: {
       if constexpr (container_of<T, NamespaceEntity>) {
-        return IterPackVariant{std::in_place_type<entity_children_range_t<NamespaceEntity>>,
-          registry.get_namespace_children_for(node)};
+        return IterPackVariant{_in_place<NamespaceEntity>, registry.get_namespace_children_for(node)};
       } else {
         throw std::logic_error(std::format(msg, entity_name<NamespaceEntity>(), entity_name<T>()));
       }

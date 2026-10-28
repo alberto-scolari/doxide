@@ -20,7 +20,7 @@ public:
     */
   void clean();
 
-  void remove_all_files() {
+  void forget_all_files() {
     files.clear();
   }
 

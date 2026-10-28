@@ -1,14 +1,17 @@
 #pragma once
 
-#include "entities/EntityRegistry.hpp"
+#include "DriverConfigParser.hpp"
 #include "FileSystemInfo.hpp"
 #include "FSCleaner.hpp"
+#include "StyleOption.hpp"
+#include "YAMLNode.hpp"
+#include "entities/EntityRegistry.hpp"
 
 #include <filesystem>
-#include <list>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -24,12 +27,13 @@ public:
   /**
    * Constructor.
    */
-  Driver();
+  Driver() = delete;
 
-  /**
-   * Read in the configuration file.
-   */
-  void config();
+  Driver(const Driver&) = delete;
+
+  Driver& operator=(const Driver&) = delete;
+
+  Driver(const DriverInitInfo&, const std::optional<DriverConfigParser>&);
 
   /**
    * Create a new configuration file.
@@ -59,7 +63,7 @@ public:
   /**
    * Markdown style.
    */
-  std::string style;
+  StyleOption style;
 
   /**
    * Title.
@@ -80,9 +84,6 @@ public:
    * Output directory.
    */
   std::filesystem::path output;
-
-  FSCleaner fscleaner;
-
 private:
   /**
    * Parse files.
@@ -107,19 +108,16 @@ private:
   /**
    * Read groups from the configuration file.
    */
-  void groups(YAMLNode& parentNode);
+  void groups(const YAMLNode& parentNode);
 
-  std::optional<EntityRegistry> registry;
+  FSCleaner fscleaner;
+
+  EntityRegistry registry;
 
   /**
    * Configuration file path.
    */
-  std::filesystem::path config_file;
-
-  /**
-   * Files patterns.
-   */
-  std::list<std::string> files_patterns;
+  std::optional<std::string> config_file;
 
   /**
    * Macro definitions.
@@ -130,6 +128,11 @@ private:
    * Files.
    */
   std::unordered_set<std::filesystem::path> filenames;
+
+  /**
+   * Files patterns.
+   */
+  std::vector<std::string> files_patterns;
 
   FileSystemInfo fsinfo;
 };

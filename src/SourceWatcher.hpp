@@ -1,9 +1,10 @@
 #pragma once
 
 #include <filesystem>
-#include <list>
 #include <string>
+#include <string_view>
 #include <tuple>
+#include <vector>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -21,12 +22,12 @@ public:
    *
    * @param patterns
    */
-  SourceWatcher(const std::list<std::string>& patterns);
+  SourceWatcher(const std::vector<std::string>& patterns);
 
   /**
    * Constructor for a single pattern.
    */
-  SourceWatcher(const std::string& pattern);
+  SourceWatcher(const std::string_view& pattern);
 
   /**
    * Check if any of the watched files changed since the last call to `changed()` or `diff()`.
@@ -52,7 +53,7 @@ private:
   /**
    * The patterns to watch.
    */
-  std::list<std::string> patterns;
+  std::vector<std::string> patterns;
 
   /**
    * The tracked file paths and their last modification time.

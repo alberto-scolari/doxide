@@ -68,6 +68,8 @@ class EntityRegistry {
       return EMPTY | std::views::join;
     }
 
+    void clear() { data.clear(); }
+
   private:
     inline static const storage_t EMPTY;
 
@@ -195,11 +197,10 @@ public:
 
   EntityRegistry(const std::string& title, const std::string& docs) {
     root.emplace_back(title, docs);
-    group_edges.back_new_iter();
   }
 
   inline const FwdRef<RootEntity> get_root_ref() const noexcept {
-    return static_cast<FwdRef<RootEntity>>(root.begin());
+    return root.front_ref();
   }
 
   inline FwdRef<RootEntity> get_root_ref() noexcept {
@@ -568,9 +569,33 @@ public:
     files_map.erase(fit);
   }
 
+  void clear_all() {
+    auto type_dispatcher = []<template <typename> typename Container>(entity_content<Container>& storage, auto&& clearer) {
+      clearer(storage.template get_for<TypeEntity>());
+      clearer(storage.template get_for<FunctionEntity>());
+      clearer(storage.template get_for<VariableEntity>());
+      clearer(storage.template get_for<EnumEntity>());
+      clearer(storage.template get_for<NamespaceEntity>());
+      clearer(storage.template get_for<TypedefEntity>());
+      clearer(storage.template get_for<ConceptEntity>());
+      clearer(storage.template get_for<OperatorEntity>());
+      clearer(storage.template get_for<MacroEntity>());
+    };
+
+    catalog.clear();
+    type_dispatcher(code_edges, [](auto&& em) { em.clear(); });
+    group_edges.clear();
+    type_dispatcher(code_entities, [](auto&& em) { em.clear(); });
+    group_hierarchy.clear();
+    name_group_map.clear();
+    group_entities.clear();
+    files_map.clear();
+    file_entities.clear();
+  }
+
 private:
 
-  mutable FwdList<RootEntity> root;
+  FwdList<RootEntity> root;
 
   FwdList<FileEntity> file_entities;
   std::unordered_map<std::string_view, FwdRef<FileEntity>> files_map;

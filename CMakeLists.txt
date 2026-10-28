@@ -130,12 +130,14 @@ add_executable(doxide
   src/DocToken.cpp
   src/DocTokenizer.cpp
   src/Driver.cpp
+  src/DriverConfigParser.cpp
   src/FSCleaner.cpp
   src/GcovCounter.cpp
   src/JSONCounter.cpp
   src/JSONGenerator.cpp
   src/FileSystemInfo.cpp
   src/SourceWatcher.cpp
+  src/StyleOption.cpp
   src/TextLineCursor.cpp
   src/Utils.cpp
   src/YAMLNode.cpp

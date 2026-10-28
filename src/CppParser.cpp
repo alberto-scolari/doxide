@@ -5,6 +5,7 @@
 #include "TextLineCursor.hpp"
 #include "CppQueries.hpp"
 #include "Regex.hpp"
+#include "StyleOption.hpp"
 #include "Utils.hpp"
 #include <doc_parser/StyleParsers.hpp>
 #include <entities/CodeEntity.hpp>
@@ -45,7 +46,7 @@ class VariableEntity;
  */
 extern "C" const TSLanguage* tree_sitter_cuda();
 
-CppParser::CppParser(std::string_view style) :
+CppParser::CppParser(StyleOption style) :
     parser(nullptr),
     query(nullptr),
     query_exclude(nullptr),

@@ -4,8 +4,10 @@
 #include <cctype>
 #include <filesystem>
 #include <format>
+#include <ranges>
 #include <string>
 #include <string_view>
+#include <vector>
 
 /**
  * Write a whole file, prompting to confirm overwrite if it already exists.

@@ -3,7 +3,7 @@
 #include <glob/glob.hpp>
 #include <utility>
 
-SourceWatcher::SourceWatcher(const std::list<std::string>& patterns): patterns{patterns}{
+SourceWatcher::SourceWatcher(const std::vector<std::string>& patterns): patterns{patterns}{
   for (auto pattern : patterns){
     auto paths = glob::rglob(pattern);
     for (auto& file : paths) {
@@ -12,7 +12,7 @@ SourceWatcher::SourceWatcher(const std::list<std::string>& patterns): patterns{p
   }
 }
 
-SourceWatcher::SourceWatcher(const std::string& pattern): SourceWatcher(std::list<std::string>{pattern}){
+SourceWatcher::SourceWatcher(const std::string_view& pattern): SourceWatcher(std::vector<std::string>{std::string{pattern}}){
   //
 }
 

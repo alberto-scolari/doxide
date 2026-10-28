@@ -2,7 +2,8 @@
 
 #include "DocParser.hpp"
 
-#include <memory>
-#include <string_view>
+#include <StyleOption.hpp>
 
-std::unique_ptr<DocParser> make_doc_parser(std::string_view style);
+#include <memory>
+
+std::unique_ptr<DocParser> make_doc_parser(StyleOption style);

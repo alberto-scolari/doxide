@@ -359,14 +359,16 @@ public:
 
 };
 
-std::unique_ptr<DocParser> make_doc_parser(std::string_view style) {
-  if (style == "mkdocs") {
-    return std::unique_ptr<DocParser>(new BaseParser<MkDocsStyle>());
-  } else if (style == "pandoc") {
-    return std::unique_ptr<DocParser>(new BaseParser<PandocStyle>());
-  } else if (style == "plain") {
-    return std::unique_ptr<DocParser>(new BaseParser<PlainStyle>());
-  } else {
-    throw std::runtime_error(std::format("style format \"{}\" unkown", style));
+std::unique_ptr<DocParser> make_doc_parser(StyleOption style) {
+  switch (style) {
+    case StyleOption::MKDOCS: {
+      return std::unique_ptr<DocParser>(new BaseParser<MkDocsStyle>());
+    }
+    case StyleOption::PANDOCS: {
+      return std::unique_ptr<DocParser>(new BaseParser<PandocStyle>());
+    }
+    case StyleOption::PLAIN: {
+      return std::unique_ptr<DocParser>(new BaseParser<PlainStyle>());
+    }
   }
 }

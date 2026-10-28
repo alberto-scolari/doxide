@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <iterator>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -171,12 +172,11 @@ public:
     return {};
   }
 
-  constexpr T& front() noexcept {
-    return head_->value;
-  }
-
-  constexpr const T& front() const noexcept {
-    return head_->value;
+  constexpr const FwdRef<T> front_ref() const {
+    if (size() == 0) {
+      throw std::runtime_error("the list is empty, cannot return front");
+    }
+    return FwdRef(head_->value);
   }
 
   constexpr iterator push_back(const T& value) {

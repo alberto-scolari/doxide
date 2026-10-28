@@ -327,14 +327,16 @@ private:
 };
 
 
-std::unique_ptr<DocRendererFactory> make_doc_renderer(std::string_view style) {
-  if (style == "mkdocs") {
-    return std::unique_ptr<DocRendererFactory>(new FactoryImpl<MkdDocRender>());
-  } else if (style == "pandoc") {
-    return std::unique_ptr<DocRendererFactory>(new FactoryImpl<PandocRender>());
-  } else if (style == "plain") {
-    return std::unique_ptr<DocRendererFactory>(new FactoryImpl<PlainRender>());
-  } else {
-    throw std::runtime_error(std::format("style \"{}\" is unknown", style));
+std::unique_ptr<DocRendererFactory> make_doc_renderer(StyleOption style) {
+  switch (style) {
+    case StyleOption::MKDOCS: {
+      return std::unique_ptr<DocRendererFactory>(new FactoryImpl<MkdDocRender>());
+    }
+    case StyleOption::PANDOCS: {
+      return std::unique_ptr<DocRendererFactory>(new FactoryImpl<PandocRender>());
+    }
+    case StyleOption::PLAIN: {
+      return std::unique_ptr<DocRendererFactory>(new FactoryImpl<PlainRender>());
+    }
   }
 }

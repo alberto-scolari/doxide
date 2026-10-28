@@ -15,8 +15,8 @@
 #include <unordered_map>
 
 class DocParser;
-
 class EntityRegistry;
+enum class StyleOption;
 
 /**
  * C++ source parser.
@@ -28,7 +28,7 @@ public:
   /**
    * Constructor.
    */
-  CppParser(std::string_view style);
+  CppParser(StyleOption style);
 
   /**
    * Destructor.

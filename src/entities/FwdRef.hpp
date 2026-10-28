@@ -78,6 +78,7 @@ public:
     return FwdHashable(ptr_);
   }
 
+  template<typename> friend class FwdList;
   template<typename> friend class FwdListIterator;
 private:
 

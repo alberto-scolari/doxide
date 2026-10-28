@@ -59,7 +59,7 @@ public:
 
   void remove_file(const std::filesystem::path& filepath);
 
-  void remove_all_files() {
+  void forget_all_files() {
     dir_info_map.clear();
     files_map.clear();
   }

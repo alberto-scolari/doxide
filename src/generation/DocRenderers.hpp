@@ -2,7 +2,8 @@
 
 #include "DocRenderer.hpp"
 
-#include <string_view>
+#include <StyleOption.hpp>
+
 #include <memory>
 
-std::unique_ptr<DocRendererFactory> make_doc_renderer(std::string_view style);
+std::unique_ptr<DocRendererFactory> make_doc_renderer(StyleOption style);

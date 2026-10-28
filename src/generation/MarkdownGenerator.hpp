@@ -26,6 +26,7 @@ class TypeEntity;
 class TypedefEntity;
 class VariableEntity;
 class sink_t;
+enum class StyleOption;
 
 class MarkdownGenerator {
 public:
@@ -35,7 +36,7 @@ public:
     * @param output Output directory.
     * @param style Markdown style.
     */
-  MarkdownGenerator(const std::filesystem::path& output, FSCleaner& _fscleaner, std::string_view style):
+  MarkdownGenerator(const std::filesystem::path& output, FSCleaner& _fscleaner, StyleOption style):
     output(output),
     fscleaner(_fscleaner),
     doc_render_factory(make_doc_renderer(style))

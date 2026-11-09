@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Documentable.hpp"
+#include "FileUtils.hpp"
 #include "EntityFormatter.hpp"
 #include "FwdRef.hpp"
 #include "LineStats.hpp"
@@ -13,39 +14,11 @@
 #include <vector>
 
 struct FileStorage {
-  std::string file_path;
-  std::string_view filename;
+  path_str file_path;
+  path_str_view filename;
 
   constexpr FileStorage(const std::filesystem::path& path): file_path(path.native()),
-    filename(get_filename(file_path)) {}
-
-  constexpr static std::string_view get_filename(const std::string_view& path) {
-      std::string_view vpath = path;
-      size_t last_slash = vpath.find_last_of("/\\");
-      if (last_slash == std::string_view::npos) {
-          return vpath; // No slash found, the entire path is the filename
-      }
-      return vpath.substr(last_slash + 1);
-  }
-
-  constexpr static std::string_view relative_path(const std::string_view& path,
-    const std::string_view& base) {
-    if (base.empty() or base.empty()) {
-      return path;
-    }
-    if (base.size() >= path.size()) {
-      return "";
-    }
-    return path.substr(base.size() + 1);
-  }
-
-  constexpr static std::string_view parent_path(const std::string_view& path) {
-    size_t last_slash = path.find_last_of("/\\");
-    if (last_slash == std::string_view::npos) {
-        return ""; // No slash found, the entire path is the filename
-    }
-    return path.substr(0, last_slash);
-  }
+    filename(file_utils::get_filename(file_path)) {}
 };
 
 class FileEntity: protected FileStorage, public Documentable, public LineStats {
@@ -58,11 +31,9 @@ public:
   constexpr FileEntity(const std::filesystem::path& path, std::string&& content, uint32_t num_lines):
     FileStorage{path}, Documentable(this->file_path, Doc(), true), content(std::move(content)), num_lines(num_lines) {}
 
-  constexpr std::string_view get_path() const noexcept { return file_path; }
+  constexpr path_str_view get_path() const noexcept { return file_path; }
 
-  constexpr std::string_view get_filename() const noexcept { return filename; }
-
-  // constexpr const std::string& get_content() const noexcept { return content; }
+  constexpr path_str_view get_filename() const noexcept { return filename; }
 
   constexpr const std::string_view get_content() const noexcept { return content; }
 

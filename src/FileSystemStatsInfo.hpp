@@ -9,8 +9,6 @@
 #include <format>
 #include <functional>
 #include <optional>
-#include <string>
-#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
@@ -26,26 +24,27 @@ public:
 
   FileSystemStatsInfo& operator=(const FileSystemStatsInfo&) = delete;
 
-  static inline constexpr std::string_view DEF_ROOT_PATH = "./";
+  static inline constexpr path_str_view DEF_ROOT_PATH = "./";
 
   struct DirInfo {
-    std::unordered_set<std::string_view> subdirs;
+    std::unordered_set<path_str_view> subdirs;
     std::unordered_set<FwdRef<FileEntity>> files;
     LineStats stats;
 
     DirInfo() = default;
   };
 
-  std::optional<FwdRef<FileEntity>> lookup_file(std::string_view path);
-
-  std::optional<FwdRef<FileEntity>> lookup_file(const std::filesystem::path& path) {
-    std::string_view p = path.native();
-    return lookup_file(p);
+  std::optional<FwdRef<FileEntity>> lookup_file(path_str_view path) {
+    return do_lookup_file(path);
   }
 
-  std::optional<std::reference_wrapper<DirInfo>> lookup_dir(std::string_view path);
+  std::optional<FwdRef<FileEntity>> lookup_file(const std::filesystem::path& path) {
+    return do_lookup_file(path.native());
+  }
 
-  std::optional<std::reference_wrapper<const DirInfo>> lookup_dir(std::string_view path) const;
+  std::optional<std::reference_wrapper<DirInfo>> lookup_dir(path_str_view path);
+
+  std::optional<std::reference_wrapper<const DirInfo>> lookup_dir(path_str_view path) const;
 
   void add_file(const std::filesystem::path& path, FwdRef<FileEntity> file);
 
@@ -63,8 +62,10 @@ public:
   }
 
 private:
-  std::unordered_map<std::string, DirInfo, het_string_hash, std::equal_to<>> dir_info_map;
-  std::unordered_map<std::string_view, FwdRef<FileEntity>> files_map;
+  std::unordered_map<path_str, DirInfo, path_het_string_hash, std::equal_to<>> dir_info_map;
+  std::unordered_map<path_str_view, FwdRef<FileEntity>> files_map;
+
+  std::optional<FwdRef<FileEntity>> do_lookup_file(path_str_view path);
 };
 
 template<bool IS_CONST> struct _DirStackController {
@@ -75,13 +76,13 @@ template<bool IS_CONST> struct _DirStackController {
     const FileSystemStatsInfo, FileSystemStatsInfo>;
 
   using iter_t = std::conditional_t<IS_CONST,
-    std::unordered_set<std::string_view>::const_iterator,
-    std::unordered_set<std::string_view>::iterator>;
-  using stack_value = std::tuple<std::string_view, _dirinfo_t&, iter_t>;
-  using yield_value = std::tuple<std::string_view, _dirinfo_t&>;
+    std::unordered_set<path_str_view>::const_iterator,
+    std::unordered_set<path_str_view>::iterator>;
+  using stack_value = std::tuple<path_str_view, _dirinfo_t&, iter_t>;
+  using yield_value = std::tuple<path_str_view, _dirinfo_t&>;
 
   _fsinfo_t& fsinfo;
-  std::string_view root_dir = FileSystemStatsInfo::DEF_ROOT_PATH;
+  path_str_view root_dir = FileSystemStatsInfo::DEF_ROOT_PATH;
 
   stack_value make_init() {
     auto opt = fsinfo.lookup_dir(root_dir);
@@ -106,7 +107,7 @@ template<bool IS_CONST> struct _DirStackController {
 
   stack_value make_next(stack_value& top) {
     iter_t& it = std::get<2>(top);
-    std::string_view next_path = *it;
+    path_str_view next_path = *it;
     ++it;
     auto opt = fsinfo.lookup_dir(next_path);
     if (not opt) {

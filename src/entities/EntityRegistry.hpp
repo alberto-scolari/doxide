@@ -552,7 +552,7 @@ public:
 
   void remove_file(const std::filesystem::path& file) {
     std::filesystem::path normalized = file.lexically_normal();
-    std::string_view filename{normalized.native()};
+    path_str_view filename{normalized.native()};
     auto it  = catalog.find(filename);
     if (it == catalog.end()) {
       return;
@@ -617,7 +617,7 @@ private:
   FwdList<RootEntity> root;
 
   FwdList<FileEntity> file_entities;
-  std::unordered_map<std::string_view, FwdRef<FileEntity>> files_map;
+  std::unordered_map<path_str_view, FwdRef<FileEntity>> files_map;
 
   // nodes
   FwdList<GroupEntity> group_entities;
@@ -635,5 +635,5 @@ private:
   entity_content<edges_map_t> code_edges;
   std::unordered_map<std::string_view, FwdRef<NamespaceEntity>> namespace_map;
 
-  std::unordered_map<std::string_view, file_catalog_t> catalog;
+  std::unordered_map<path_str_view, file_catalog_t> catalog;
 };

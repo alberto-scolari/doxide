@@ -1,5 +1,7 @@
 #pragma once
 
+#include "entities/FileUtils.hpp"
+
 #include <algorithm>
 #include <concepts>
 #include <coroutine>
@@ -65,6 +67,22 @@ struct het_string_hash {
 
     std::size_t operator()(const std::string& s) const noexcept {
         return std::hash<std::string>{}(s);
+    }
+};
+
+struct path_het_string_hash {
+    using is_transparent = void; // Enables heterogeneous lookup
+
+    std::size_t operator()(const path_str_view& sv) const noexcept {
+      return std::hash<path_str_view>{}(sv);
+    }
+
+    std::size_t operator()(const path_str& s) const noexcept {
+      return std::hash<path_str>{}(s);
+    }
+
+    std::size_t operator()(const std::filesystem::path& p) const noexcept {
+      return std::hash<path_str>{}(p.native());
     }
 };
 

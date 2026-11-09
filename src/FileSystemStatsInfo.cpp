@@ -6,7 +6,7 @@
 
 #include <iostream>
 
-std::optional<FwdRef<FileEntity>> FileSystemStatsInfo::lookup_file(std::string_view path) {
+std::optional<FwdRef<FileEntity>> FileSystemStatsInfo::do_lookup_file(path_str_view path) {
   auto it = files_map.find(path);
   if (it == files_map.end()) {
     return {};
@@ -14,7 +14,7 @@ std::optional<FwdRef<FileEntity>> FileSystemStatsInfo::lookup_file(std::string_v
   return it->second;
 }
 
-std::optional<std::reference_wrapper<FileSystemStatsInfo::DirInfo>> FileSystemStatsInfo::lookup_dir(std::string_view path) {
+std::optional<std::reference_wrapper<FileSystemStatsInfo::DirInfo>> FileSystemStatsInfo::lookup_dir(path_str_view path) {
   auto it = dir_info_map.find(path);
   if (it == dir_info_map.end()) {
     return {};
@@ -22,7 +22,7 @@ std::optional<std::reference_wrapper<FileSystemStatsInfo::DirInfo>> FileSystemSt
   return it->second;
 }
 
-std::optional<std::reference_wrapper<const FileSystemStatsInfo::DirInfo>> FileSystemStatsInfo::lookup_dir(std::string_view path) const {
+std::optional<std::reference_wrapper<const FileSystemStatsInfo::DirInfo>> FileSystemStatsInfo::lookup_dir(path_str_view path) const {
   auto it = dir_info_map.find(path);
   if (it == dir_info_map.cend()) {
     return {};
@@ -43,7 +43,7 @@ void FileSystemStatsInfo::add_file(const std::filesystem::path& path, FwdRef<Fil
     throw std::runtime_error(std::format("file '{}' was already added", normalized.native()));
   }
 
-  auto get_or_create_path = [&](std::string_view path) {
+  auto get_or_create_path = [&](path_str_view path) {
     auto it = dir_info_map.find(path);
     if (it == dir_info_map.end()) {
       auto [pit, _] = dir_info_map.try_emplace(std::string(path));
@@ -53,7 +53,7 @@ void FileSystemStatsInfo::add_file(const std::filesystem::path& path, FwdRef<Fil
   };
 
   fs::path parent = normalized.parent_path();
-  std::string_view parent_view = not parent.empty() ? parent.native() : DEF_ROOT_PATH;
+  path_str_view parent_view = not parent.empty() ? parent.native() : DEF_ROOT_PATH;
   auto it = get_or_create_path(parent_view);
   it->second.files.insert(file);
   if (parent.empty()) {
@@ -101,7 +101,7 @@ void FileSystemStatsInfo::explore() const {
 void FileSystemStatsInfo::remove_file(const std::filesystem::path& filepath) {
   namespace fs = std::filesystem;
   fs::path normalized = filepath.lexically_normal();
-  std::string_view norm_view = normalized.native();
+  path_str_view norm_view = normalized.native();
   auto file_it = files_map.find(normalized.native());
   if (file_it == files_map.end()) {
     throw std::runtime_error(std::format("cannot find file name \"{}\"", filepath.native()));
@@ -109,7 +109,7 @@ void FileSystemStatsInfo::remove_file(const std::filesystem::path& filepath) {
   FwdRef<FileEntity> fe = file_it->second;
   files_map.erase(file_it);
 
-  auto get_opt_path = [&](std::string_view path) {
+  auto get_opt_path = [&](path_str_view path) {
     auto it = dir_info_map.find(path);
     if (it == dir_info_map.end()) {
       return std::optional<decltype(it)>();
@@ -119,7 +119,7 @@ void FileSystemStatsInfo::remove_file(const std::filesystem::path& filepath) {
 
   fs::path parent = normalized.parent_path();
   bool is_root = parent.empty();
-  std::string_view parent_view = not is_root ? parent.native() : DEF_ROOT_PATH;
+  path_str_view parent_view = not is_root ? parent.native() : DEF_ROOT_PATH;
   auto parent_it = get_opt_path(parent_view);
   if (parent_it) {
     (*parent_it)->second.files.erase(fe);
@@ -127,7 +127,7 @@ void FileSystemStatsInfo::remove_file(const std::filesystem::path& filepath) {
   while(parent_it and (*parent_it)->second.files.empty() and (*parent_it)->second.subdirs.empty() and not is_root) {
     std::size_t last_sep = (*parent_it)->first.find_last_of('/');
     is_root = last_sep == 0 or last_sep == std::string_view::npos;
-    std::string_view parent_view = is_root ? DEF_ROOT_PATH : norm_view.substr(0, last_sep);
+    path_str_view parent_view = is_root ? DEF_ROOT_PATH : norm_view.substr(0, last_sep);
     auto current_it = *parent_it;
     parent_it = get_opt_path(parent_view);
     if (parent_it) {
